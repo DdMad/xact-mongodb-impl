@@ -388,6 +388,7 @@ public class DatabaseBuilder {
         Stream<String> orders = Files.lines(path);
         List<Document> orderList = new ArrayList<Document>();
 
+        // c_last_o_id map
         Map<Long, Integer> cLastOIdMap = new HashMap<Long, Integer>();
 
         orders.forEach(o -> {
@@ -415,20 +416,19 @@ public class DatabaseBuilder {
 
             orderList.add(createOrderDoc(wdoId, cId, oCarrierId, oOlCnt, oAllLocal, oEntryD));
 
-
             // Update c_last_o_id
+            int oIdInt = Integer.parseInt(oId);
             if (cLastOIdMap.containsKey(wdcId)) {
-                if (cLastOIdMap.get(wdcId) < Integer.parseInt(oId)) {
-                    cLastOIdMap.put(wdcId, Integer.parseInt(oId));
+                if (cLastOIdMap.get(wdcId) < oIdInt) {
+                    cLastOIdMap.put(wdcId, oIdInt);
                 }
             } else {
-                cLastOIdMap.put(wdcId, Integer.parseInt(oId));
+                cLastOIdMap.put(wdcId, oIdInt);
             }
 
             if (orderList.size() >= INSERT_THRESHOLD) {
                 orderCollection.insertMany(orderList);
                 orderList.clear();
-
             }
         });
 
@@ -436,6 +436,7 @@ public class DatabaseBuilder {
             orderCollection.insertMany(orderList);
         }
 
+        // Prepare bulk updates
         List<WriteModel<Document>> cLastOIdUpdates = new ArrayList<WriteModel<Document>>();
         for (Map.Entry<Long, Integer> entry : cLastOIdMap.entrySet()) {
             cLastOIdUpdates.add(new UpdateOneModel<Document>(Filters.eq("_id", entry.getKey()),
