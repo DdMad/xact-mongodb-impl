@@ -2,6 +2,7 @@ import com.mongodb.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.BulkWriteOptions;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.UpdateOneModel;
 import com.mongodb.client.model.WriteModel;
@@ -15,9 +16,7 @@ import java.nio.file.*;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
+import java.util.*;
 import java.util.stream.Stream;
 
 /**
@@ -69,6 +68,7 @@ public class DatabaseBuilder {
         Path dir = FileSystems.getDefault().getPath(dataFileDir);
         DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*.csv");
 
+        Path orderPath = null;
         Path orderLinePath = null;
 
         for (Path path : stream) {
@@ -82,7 +82,7 @@ public class DatabaseBuilder {
             } else if (name.equals(DATA_ITEM)) {
                 loadItemData(path);
             } else if (name.equals(DATA_ORDER)) {
-                loadOrderData(path);
+                orderPath = path;
             } else if (name.equals(DATA_ORDER_LINE)) {
                 orderLinePath = path;
             } else if (name.equals(DATA_STOCK)) {
@@ -92,6 +92,10 @@ public class DatabaseBuilder {
             } else {
                 logger.warn("Wrong data file: " + name + "!");
             }
+        }
+
+        if (orderPath != null) {
+            loadOrderData(orderPath);
         }
 
         if (orderLinePath != null) {
@@ -180,6 +184,9 @@ public class DatabaseBuilder {
             customerStaticCollection.insertMany(customerStaticList);
             customerUnusedCollection.insertMany(customerUnusedList);
         }
+
+        // Create index on c_balance
+        customerCollection.createIndex(new Document("c_balance", -1));
 
         logger.info("Complete loading custom collection!");
     }
@@ -376,9 +383,12 @@ public class DatabaseBuilder {
         db.createCollection(COLLECTION_ORDER);
 
         MongoCollection<Document> orderCollection = db.getCollection(COLLECTION_ORDER);
+        MongoCollection<Document> customerCollection = db.getCollection(COLLECTION_CUSTOMER);
 
         Stream<String> orders = Files.lines(path);
         List<Document> orderList = new ArrayList<Document>();
+
+        Map<Long, Integer> cLastOIdMap = new HashMap<Long, Integer>();
 
         orders.forEach(o -> {
             String[] content = o.split(",");
@@ -397,16 +407,44 @@ public class DatabaseBuilder {
             wdoId <<= 24;
             wdoId += Long.parseLong(oId);
 
+            long wdcId = Long.parseLong(wId);
+            wdcId <<= 4;
+            wdcId += Long.parseLong(dId);
+            wdcId <<= 21;
+            wdcId += Long.parseLong(cId);
+
             orderList.add(createOrderDoc(wdoId, cId, oCarrierId, oOlCnt, oAllLocal, oEntryD));
+
+
+            // Update c_last_o_id
+            if (cLastOIdMap.containsKey(wdcId)) {
+                if (cLastOIdMap.get(wdcId) < Integer.parseInt(oId)) {
+                    cLastOIdMap.put(wdcId, Integer.parseInt(oId));
+                }
+            } else {
+                cLastOIdMap.put(wdcId, Integer.parseInt(oId));
+            }
 
             if (orderList.size() >= INSERT_THRESHOLD) {
                 orderCollection.insertMany(orderList);
                 orderList.clear();
+
             }
         });
 
         if (!orderList.isEmpty()) {
             orderCollection.insertMany(orderList);
+        }
+
+        List<WriteModel<Document>> cLastOIdUpdates = new ArrayList<WriteModel<Document>>();
+        for (Map.Entry<Long, Integer> entry : cLastOIdMap.entrySet()) {
+            cLastOIdUpdates.add(new UpdateOneModel<Document>(Filters.eq("_id", entry.getKey()),
+                    new Document("$set", new Document("c_last_o_id", entry.getValue())))
+            );
+        }
+
+        if (!cLastOIdUpdates.isEmpty()) {
+            customerCollection.bulkWrite(cLastOIdUpdates, new BulkWriteOptions().ordered(false));
         }
 
         logger.info("Complete loading orders collection!");
@@ -495,7 +533,7 @@ public class DatabaseBuilder {
             if (orderLineUnusedList.size() >= INSERT_THRESHOLD) {
                 orderLineUnusedCollection.insertMany(orderLineUnusedList);
                 orderLineUnusedList.clear();
-                orderCollection.bulkWrite(updates);
+                orderCollection.bulkWrite(updates, new BulkWriteOptions().ordered(false));
                 updates.clear();
             }
         });
