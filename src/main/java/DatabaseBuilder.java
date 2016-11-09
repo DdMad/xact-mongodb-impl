@@ -40,7 +40,6 @@ public class DatabaseBuilder {
     private static final String COLLECTION_DISTRICT_NEXT_O_ID = "district_next_o_id";
     private static final String COLLECTION_ITEM = "item";
     private static final String COLLECTION_ITEM_UNUSED = "item_unused";
-    private static final String COLLECTION_ORDER_LINE = "orderLine";
     private static final String COLLECTION_ORDER_LINE_UNUSED = "orderLine_unused";
     private static final String COLLECTION_ORDER = "orders";
     private static final String COLLECTION_STOCK = "stock";
@@ -434,7 +433,7 @@ public class DatabaseBuilder {
     }
 
     private void loadOrderLineData(Path path) throws IOException {
-        logger.info("Start processing order-line collection");
+        logger.info("Start processing orderLine collection");
 
         db.getCollection(COLLECTION_ORDER_LINE_UNUSED).drop();
         db.createCollection(COLLECTION_ORDER_LINE_UNUSED);
@@ -506,7 +505,7 @@ public class DatabaseBuilder {
             orderCollection.bulkWrite(updates);
         }
 
-        logger.info("Complete loading order_line collection!");
+        logger.info("Complete loading orderLine collection!");
     }
 
     private Document createOrderLineUnusedDoc(long wdoolId, String olDistInfo) {
