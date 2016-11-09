@@ -1,6 +1,10 @@
 import com.mongodb.MongoClient;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.UpdateOneModel;
+import com.mongodb.client.model.WriteModel;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 import org.bson.Document;
@@ -66,6 +70,8 @@ public class DatabaseBuilder {
         Path dir = FileSystems.getDefault().getPath(dataFileDir);
         DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*.csv");
 
+        Path orderLinePath = null;
+
         for (Path path : stream) {
             String name = path.getFileName().toString();
             logger.info("Process file: " + name);
@@ -78,24 +84,19 @@ public class DatabaseBuilder {
                 loadItemData(path);
             } else if (name.equals(DATA_ORDER)) {
                 loadOrderData(path);
+            } else if (name.equals(DATA_ORDER_LINE)) {
+                orderLinePath = path;
             } else if (name.equals(DATA_STOCK)) {
                 loadStockData(path);
             } else if (name.equals(DATA_WAREHOUSE)) {
                 loadWarehouseData(path);
             } else {
-                logger.info("Not yet for " + name);
+                logger.warn("Wrong data file: " + name + "!");
             }
         }
 
-        for (Path path : stream) {
-            String name = path.getFileName().toString();
-            logger.info("Process file: " + name);
-
-            if (name.equals(DATA_ORDER_LINE)) {
-                loadOrderLineData(path);
-            } else {
-                logger.warn("Wrong file for " + name);
-            }
+        if (orderLinePath != null) {
+            loadOrderLineData(orderLinePath);
         }
     }
 
@@ -415,8 +416,8 @@ public class DatabaseBuilder {
     private Document createOrderDoc(long wdoId, String cId, String oCarrierId, String oOlCnt, String oAllLocal, String oEntryD) {
         try {
             return new Document("_id", wdoId)
-                    .append("c_id", cId)
-                    .append("o_carrier_id", oCarrierId)
+                    .append("c_id", Integer.parseInt(cId))
+                    .append("o_carrier_id", oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
                     .append("o_ol_cnt", Double.parseDouble(oOlCnt))
                     .append("o_all_local", Double.parseDouble(oAllLocal))
                     .append("o_entry_d", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").parse(oEntryD));
@@ -426,7 +427,7 @@ public class DatabaseBuilder {
 
         return new Document("_id", wdoId)
                 .append("c_id", cId)
-                .append("o_carrier_id", oCarrierId)
+                .append("o_carrier_id", oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
                 .append("o_ol_cnt", Double.parseDouble(oOlCnt))
                 .append("o_all_local", Double.parseDouble(oAllLocal))
                 .append("o_entry_d", oEntryD);
@@ -439,9 +440,14 @@ public class DatabaseBuilder {
         db.createCollection(COLLECTION_ORDER_LINE_UNUSED);
 
         MongoCollection<Document> orderLineUnusedCollection = db.getCollection(COLLECTION_ORDER_LINE_UNUSED);
+        MongoCollection<Document> orderCollection = db.getCollection(COLLECTION_ORDER);
+        MongoCollection<Document> itemCollection = db.getCollection(COLLECTION_ITEM);
 
         Stream<String> orderLines = Files.lines(path);
         List<Document> orderLineUnusedList = new ArrayList<Document>();
+
+//        List<Long> wdoIdList = new ArrayList<Long>();
+        List<WriteModel<Document>> updates = new ArrayList<WriteModel<Document>>();
 
         orderLines.forEach(o -> {
             String[] content = o.split(",");
@@ -461,6 +467,27 @@ public class DatabaseBuilder {
             wdoolId += Long.parseLong(dId);
             wdoolId <<= 24;
             wdoolId += Long.parseLong(oId);
+
+            // Add update model
+            long wdoId = wdoolId;
+            MongoCursor<Document> itemResult = itemCollection.find(Filters.eq("_id", Integer.parseInt(iId))).iterator();
+            Document item = null;
+            if (itemResult.hasNext()) {
+                item = itemResult.next();
+            }
+
+            updates.add(new UpdateOneModel<Document>(Filters.eq("_id", wdoId), new Document("$push", new Document("ol_list", new Document("ol_number", Integer.parseInt(olNumber))
+                    .append("ol_item", new Document("i_id", Integer.parseInt(iId))
+                            .append("i_name", item.get("i_name", String.class))
+                            .append("i_price", item.get("i_price", Double.class))
+                            .append("i_im_id", item.get("i_im_id", Integer.class))
+                    )
+                    .append("ol_delivery_d", olDeliveryD.equals("null") ? null : olDeliveryD)
+                    .append("ol_amount", Double.parseDouble(olAmount))
+                    .append("ol_supply_w_id", Integer.parseInt(olSupplyWId))
+                    .append("ol_quantity", Double.parseDouble(olQuantity))
+            ))));
+
             wdoolId <<= 5;
             wdoolId += Long.parseLong(olNumber);
 
@@ -469,11 +496,14 @@ public class DatabaseBuilder {
             if (orderLineUnusedList.size() >= INSERT_THRESHOLD) {
                 orderLineUnusedCollection.insertMany(orderLineUnusedList);
                 orderLineUnusedList.clear();
+                orderCollection.bulkWrite(updates);
+                updates.clear();
             }
         });
 
         if (!orderLineUnusedList.isEmpty()) {
             orderLineUnusedCollection.insertMany(orderLineUnusedList);
+            orderCollection.bulkWrite(updates);
         }
 
         logger.info("Complete loading order_line collection!");
@@ -552,10 +582,10 @@ public class DatabaseBuilder {
 
     private Document createStockDoc(long wiId, String sQuantity, String sYtd, String sOrderCnt, String sRemoteCnt) {
         return new Document("_id", wiId)
-                .append("s_quantity", sQuantity)
-                .append("s_ytd", sYtd)
-                .append("s_order_cnt", sOrderCnt)
-                .append("s_remote_cnt", sRemoteCnt);
+                .append("s_quantity", Double.parseDouble(sQuantity))
+                .append("s_ytd", Double.parseDouble(sYtd))
+                .append("s_order_cnt", Integer.parseInt(sOrderCnt))
+                .append("s_remote_cnt", Integer.parseInt(sRemoteCnt));
     }
 
     private Document createStockStaticDoc(long wiId, String sDist01, String sDist02, String sDist03, String sDist04, String sDist05, String sDist06, String sDist07, String sDist08, String sDist09, String sDist10) {
@@ -619,6 +649,10 @@ public class DatabaseBuilder {
             warehouseCollection.insertMany(warehouseList);
             warehouseStaticCollection.insertMany(warehouseStaticList);
         }
+
+        warehouseCollection.updateOne(Filters.eq("_id", 1), new Document("$push", new Document("test", 1)));
+
+        warehouseCollection.updateOne(Filters.eq("_id", 1), new Document("$push", new Document("test", 2)));
 
         logger.info("Complete loading warehouse collection!");
     }
