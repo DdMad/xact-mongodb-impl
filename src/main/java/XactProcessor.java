@@ -3,6 +3,7 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.*;
+import com.sun.javadoc.Doc;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 import org.bson.Document;
@@ -55,7 +56,7 @@ public class XactProcessor {
     private MongoCollection<Document> stockStaticCollection;
     private MongoCollection<Document> stockUnusedCollection;
 
-    public XactProcessor(String dir, String dbName) {
+    public XactProcessor(String dir, String dbName) throws IOException {
         logger = Logger.getLogger(XactProcessor.class.getName());
         String log4JPropertyFile = System.getProperty("user.dir") + "/log4j.properties";
         Properties p = new Properties();
@@ -86,6 +87,12 @@ public class XactProcessor {
         stockCollection = db.getCollection(COLLECTION_STOCK);
         stockStaticCollection = db.getCollection(COLLECTION_STOCK_STATIC);
         stockUnusedCollection = db.getCollection(COLLECTION_STOCK_UNUSED);
+
+        File output = new File(xactFileDir + "-out.txt");
+        if (!output.exists()) {
+            output.createNewFile();
+        }
+        bw = new BufferedWriter(new FileWriter(output));
     }
 
     public long processXact(long[] xactCount, long[] xactTime) throws IOException {
@@ -366,6 +373,14 @@ public class XactProcessor {
         int m = Integer.parseInt(data[4]);
         int oAllLocal = 1;
 
+        // Store output info
+        ArrayList<String> itemNumberList = new ArrayList<>();
+        ArrayList<String> iNameList = new ArrayList<>();
+        ArrayList<String> supplyWarehouseList = new ArrayList<>();
+        ArrayList<String> quantityList = new ArrayList<>();
+        ArrayList<String> olAmountList = new ArrayList<>();
+        ArrayList<String> sQuantityList = new ArrayList<>();
+
         long wdId = Long.parseLong(wId);
         wdId <<= 4;
         wdId += Long.parseLong(dId);
@@ -377,8 +392,14 @@ public class XactProcessor {
         wdoId <<= 24;
         wdoId += dNextOId;
 
+        long wdcId = wdId;
+        wdcId <<= 21;
+        wdcId += Long.parseLong(cId);
+
         List<Document> orderLineList = new ArrayList<Document>();
         List<Document> orderLineUnusedList = new ArrayList<Document>();
+
+        List<WriteModel<Document>> stockUpdates = new ArrayList<WriteModel<Document>>();
 
         List<String> popularIName = new ArrayList<String>();
         double maxQuantity = 0;
@@ -392,23 +413,37 @@ public class XactProcessor {
 
             oAllLocal = olSupplyWId.equals(wId) ? 1 : 0;
             int iIdInt = Integer.parseInt(olIId);
+            double olQuantityDouble = Double.parseDouble(olQuantity);
 
             // Get i_price
             Document item = itemCollection.find(Filters.eq("_id", iIdInt)).first();
             double iPrice = item.get("i_price", Double.class);
+            String iName = item.get("i_name", String.class);
 
             // Calculate ol_amount
-            double olAmount = Double.parseDouble(olQuantity) * iPrice;
+            double olAmount = olQuantityDouble * iPrice;
 
             // Calculate order total amount
             oTotalAmount += olAmount;
 
-            // Get stock info
-            long wiId = Long.parseLong(wId);
+            // Get stock static info
+            long wiId = Long.parseLong(olSupplyWId);
             wiId <<= 17;
             wiId += iIdInt;
-            Document stock = stockStaticCollection.find(Filters.eq("_id", wiId)).first();
-            String stockInfo = stock.get("s_dist_" + dId, String.class);
+            Document stockStatic = stockStaticCollection.find(Filters.eq("_id", wiId)).first();
+            String stockInfo = stockStatic.get("s_dist_" + dId, String.class);
+
+            // Get stock info
+            Document stock = stockCollection.find(Filters.eq("_id", wiId)).first();
+            double adjustedQty = stock.get("s_quantity", Double.class) - olQuantityDouble;
+            adjustedQty = adjustedQty < 10 ? adjustedQty + 100 : adjustedQty;
+
+            // Add stock update
+            stockUpdates.add(new UpdateOneModel<Document>(new Document("_id", wiId), new Document("$set", new Document("s_quantity", adjustedQty))));
+            stockUpdates.add(new UpdateOneModel<Document>(new Document("_id", wiId), new Document("$inc", new Document("s_ytd", olQuantityDouble).append("s_order_cnt", 1))));
+            if (!wId.equals(olSupplyWId)) {
+                stockUpdates.add(new UpdateOneModel<Document>(new Document("_id", wiId), new Document("$inc", new Document("s_remote_cnt", 1))));
+            }
 
             // Calculate popular
             double quantity = Double.parseDouble(olQuantity);
@@ -434,6 +469,14 @@ public class XactProcessor {
                     olSupplyWId,
                     olQuantity
                 ));
+
+            // Add output info
+            itemNumberList.add(olIId);
+            iNameList.add(iName);
+            supplyWarehouseList.add(olSupplyWId);
+            quantityList.add(olQuantity);
+            olAmountList.add(Double.toString(olAmount));
+            sQuantityList.add(Double.toString(adjustedQty));
         }
 
         // Insert to orderLineUnusedCollection
@@ -443,6 +486,9 @@ public class XactProcessor {
         String oEntryD = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(Calendar.getInstance());
         orderCollection.insertOne(DocCreator.createOrderWithOrderLinePopularTotalAmountDoc(wdoId, cId, null, Integer.toString(m), Integer.toString(oAllLocal), oEntryD, orderLineList, popularIName, maxQuantity, oTotalAmount));
 
+        // Update stock
+        stockCollection.bulkWrite(stockUpdates, new BulkWriteOptions().ordered(false));
+
         // Update district
         List<Document> list = new ArrayList<Document>();
         list.add(new Document("o_id", dNextOId).append("c_id", Integer.parseInt(cId)));
@@ -450,6 +496,26 @@ public class XactProcessor {
                 new Document("$push",
                         new Document("d_o_to_c_list",
                                 new Document("$each", list).append("$sort", new Document("o_id", 1)))));
+
+        /**************** Output ****************/
+        // Get static
+        Document customerStatic = customerStaticCollection.find(new Document("_id", wdcId)).first();
+        Document warehouseStatic = warehouseStaticCollection.find(new Document("_id", Integer.parseInt(wId))).first();
+        Document districtStatic = districtCollection.find(new Document("_id", wdId)).first();
+
+        bw.write(String.format("%s,%s,%s,%s,%s,%s", wId, dId, cId, customerStatic.get("c_last", String.class), customerStatic.get("c_credit", String.class), Double.toString(customerStatic.get("c_discount", Double.class))));
+        bw.newLine();
+        bw.write(String.format("%s,%s", Double.toString(warehouseStatic.get("w_tax", Double.class)), Double.toString(districtStatic.get("d_tax", Double.class))));
+        bw.newLine();
+        bw.write(String.format("%d,%s", dNextOId, oEntryD));
+        bw.newLine();
+        bw.write(String.format("%d,%s", m, Double.toString(oTotalAmount * (1 + warehouseStatic.get("w_tax", Double.class) + districtStatic.get("d_tax", Double.class)) * (1 - customerStatic.get("c_discount", Double.class)))));
+        bw.newLine();
+        for (int i = 0; i < itemNumberList.size(); i++) {
+            bw.write(String.format("%s,%s,%s,%s,%s,%s", itemNumberList.get(i), iNameList.get(i), sQuantityList.get(i), quantityList.get(i), olAmountList.get(i), sQuantityList.get(i)));
+            bw.newLine();
+        }
+        bw.flush();
     }
 
     public static void main(String[] args) {
