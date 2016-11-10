@@ -1,17 +1,36 @@
 import com.mongodb.MongoClient;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.*;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
+import org.bson.Document;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 /**
  * Created by ddmad on 9/11/16.
  */
 public class XactProcessor {
+    private static final String COLLECTION_CUSTOMER = "customer";
+    private static final String COLLECTION_CUSTOMER_STATIC = "customer_static";
+    private static final String COLLECTION_CUSTOMER_UNUSED = "customer_unused";
+    private static final String COLLECTION_DISTRICT = "district";
+    private static final String COLLECTION_DISTRICT_STATIC = "district_static";
+    private static final String COLLECTION_DISTRICT_NEXT_O_ID = "district_next_o_id";
+    private static final String COLLECTION_ITEM = "item";
+    private static final String COLLECTION_ITEM_UNUSED = "item_unused";
+    private static final String COLLECTION_ORDER_LINE_UNUSED = "orderLine_unused";
+    private static final String COLLECTION_ORDER = "orders";
+    private static final String COLLECTION_STOCK = "stock";
+    private static final String COLLECTION_STOCK_STATIC = "stock_static";
+    private static final String COLLECTION_STOCK_UNUSED = "stock_unused";
+    private static final String COLLECTION_WAREHOUSE = "warehouse";
+    private static final String COLLECTION_WAREHOUSE_STATIC = "warehouse_static";
+
     private String xactFileDir;
     private BufferedReader br;
     private BufferedWriter bw;
@@ -19,6 +38,22 @@ public class XactProcessor {
     private Logger logger;
 
     private MongoDatabase db;
+
+    private MongoCollection<Document> warehouseCollection;
+    private MongoCollection<Document> warehouseStaticCollection;
+    private MongoCollection<Document> districtCollection;
+    private MongoCollection<Document> districtStaticCollection;
+    private MongoCollection<Document> districtNextOIdCollection;
+    private MongoCollection<Document> customerCollection;
+    private MongoCollection<Document> customerStaticCollection;
+    private MongoCollection<Document> customerUnusedCollection;
+    private MongoCollection<Document> orderCollection;
+    private MongoCollection<Document> orderLineUnusedCollection;
+    private MongoCollection<Document> itemCollection;
+    private MongoCollection<Document> itemUnusedCollection;
+    private MongoCollection<Document> stockCollection;
+    private MongoCollection<Document> stockStaticCollection;
+    private MongoCollection<Document> stockUnusedCollection;
 
     public XactProcessor(String dir, String dbName) {
         logger = Logger.getLogger(XactProcessor.class.getName());
@@ -35,6 +70,22 @@ public class XactProcessor {
         xactFileDir = dir;
         MongoClient mongoClient = new MongoClient();
         db = mongoClient.getDatabase(dbName);
+
+        warehouseCollection = db.getCollection(COLLECTION_WAREHOUSE);
+        warehouseStaticCollection = db.getCollection(COLLECTION_WAREHOUSE_STATIC);
+        districtCollection = db.getCollection(COLLECTION_DISTRICT);
+        districtStaticCollection = db.getCollection(COLLECTION_DISTRICT_STATIC);
+        districtNextOIdCollection = db.getCollection(COLLECTION_DISTRICT_NEXT_O_ID);
+        customerCollection = db.getCollection(COLLECTION_CUSTOMER);
+        customerStaticCollection = db.getCollection(COLLECTION_CUSTOMER_STATIC);
+        customerUnusedCollection = db.getCollection(COLLECTION_CUSTOMER_UNUSED);
+        orderCollection = db.getCollection(COLLECTION_ORDER);
+        orderLineUnusedCollection = db.getCollection(COLLECTION_ORDER_LINE_UNUSED);
+        itemCollection = db.getCollection(COLLECTION_ITEM);
+        itemUnusedCollection = db.getCollection(COLLECTION_ITEM_UNUSED);
+        stockCollection = db.getCollection(COLLECTION_STOCK);
+        stockStaticCollection = db.getCollection(COLLECTION_STOCK_STATIC);
+        stockUnusedCollection = db.getCollection(COLLECTION_STOCK_UNUSED);
     }
 
     public long processXact(long[] xactCount, long[] xactTime) throws IOException {
@@ -129,24 +180,171 @@ public class XactProcessor {
     }
 
     private void processTopBalanceXact() {
+        // Get top 10 customers
+        MongoCursor<Document> top10Customers = customerCollection.find().limit(10).iterator();
     }
 
     private void processPopularItemXact(String[] data) {
+        String wId = data[1];
+        String dId = data[2];
+        int lastOrderAmount = Integer.parseInt(data[3]);
+
+        long wdId = Long.parseLong(wId);
+        wdId <<= 4;
+        wdId += Long.parseLong(dId);
+
+        // Get d_next_o_id
+        int dNextOId = districtNextOIdCollection.find(Filters.eq("_id", wdId)).first().get("d_next_o_id", Integer.class);
+
+        long wdoId = wdId;
+        wdoId <<= 24;
+        wdoId += dNextOId;
+
+        // Get L orders
+        MongoCursor<Document> lastLOrders = orderCollection.find(new Document("$gte", new Document("_id", wdoId - lastOrderAmount)).append("$lt", new Document("_id", wdoId))).iterator();
+        List<Document> lastLOrderList = new ArrayList<Document>();
+        while (lastLOrders.hasNext()) {
+            lastLOrderList.add(lastLOrders.next());
+        }
+
+        // Calculate popular item percentage
+        Map<String, Double> popularity = new HashMap<String, Double>();
+
+        for (Document o1 : lastLOrderList) {
+            String iName = o1.get("o_popular_i_name", String.class);
+            if (popularity.containsKey(iName)) {
+                continue;
+            } else {
+                popularity.put(iName, 0.0);
+            }
+
+            for (Document o2: lastLOrderList) {
+                boolean find = false;
+                List<Document> olList = o2.get("ol_list", List.class);
+
+                for (Document ol : olList) {
+                    String s = ol.get("ol_item", Document.class).get("i_name", String.class);
+
+                    if (s.equals(iName)) {
+                        find = true;
+                        break;
+                    }
+                }
+
+                if (find) {
+                    popularity.put(iName, popularity.get(iName) + 1.0);
+                }
+            }
+        }
     }
 
     private void processStockLevelXact(String[] data) {
+        String wId = data[1];
+        String dId = data[2];
+        double stockThreshold = Double.parseDouble(data[3]);
+        int lastOrderAmount = Integer.parseInt(data[4]);
+
+        long wdId = Long.parseLong(wId);
+        wdId <<= 4;
+        wdId += Long.parseLong(dId);
+
+        // Get d_next_o_id
+        int dNextOId = districtNextOIdCollection.find(Filters.eq("_id", wdId)).first().get("d_next_o_id", Integer.class);
+
+        long wdoId = wdId;
+        wdoId <<= 24;
+        wdoId += dNextOId;
+
+        // Get L orders
+        MongoCursor<Document> lastLOrders = orderCollection.find(new Document("$gte", new Document("_id", wdoId - lastOrderAmount)).append("$lt", new Document("_id", wdoId))).iterator();
+
+        // Calculate total number of items that has less stock
+        int count = 0;
+
+        while (lastLOrders.hasNext()) {
+            Document order = lastLOrders.next();
+            List<Document> olList = order.get("ol_list", List.class);
+
+            for (Document ol : olList) {
+                // Get stock
+                long wiId = Long.parseLong(wId);
+                wiId <<= 17;
+                wiId += ol.get("ol_item", Document.class).get("i_id", Integer.class);
+                double sQuantity = stockCollection.find(Filters.eq("_id", wiId)).first().get("s_quantity", Double.class);
+
+                if (sQuantity < stockThreshold) {
+                    count++;
+                }
+            }
+        }
     }
 
     private void processOrderStatusXact(String[] data) {
+        String wId = data[1];
+        String dId = data[2];
+        String cId = data[3];
     }
 
     private void processDeliveryXact(String[] data) {
+        String wId = data[1];
+        int carrierId = Integer.parseInt(data[2]);
+
+        List<WriteModel<Document>> districtUpdates = new ArrayList<WriteModel<Document>>();
+        List<WriteModel<Document>> orderUpdates = new ArrayList<WriteModel<Document>>();
+        List<WriteModel<Document>> customerUpdates = new ArrayList<WriteModel<Document>>();
+
+        for (int i = 1; i <= 10; i++) {
+            long wdId = Long.parseLong(wId);
+            wdId <<= 4;
+            wdId += i;
+
+            List<Document> districtList = districtCollection.find(new Document("_id", wdId)).projection(new Document("d_o_to_c_list", new Document("$slice", 1))).into(new ArrayList<Document>());
+            if (!districtList.isEmpty()) {
+                Document district = districtList.get(0);
+                long wdoId = wdId;
+                wdoId <<= 24;
+                wdoId += (long)district.get("d_o_to_c_list", List.class).get(0);
+
+                // Add order update
+                orderUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdoId), new Document("$set", new Document("o_carrier_id", carrierId))));
+                orderUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdoId), new Document()));
+
+                // Add district update
+                districtUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdId), new Document("$pop", new Document("d_o_to_c_list", -1))));
+            }
+        }
+
+        districtCollection.bulkWrite(districtUpdates, new BulkWriteOptions().ordered(false));
     }
 
     private void processPaymentXact(String[] data) {
+        String wId = data[1];
+        String dId = data[2];
+        String cId = data[3];
+        double payment = Double.parseDouble(data[4]);
+
+        long wdId = Long.parseLong(wId);
+        wdId <<= 4;
+        wdId += Long.parseLong(dId);
+
+        long wdcId = wdId;
+        wdcId <<= 21;
+        wdcId += Long.parseLong(cId);
+
+        // Update w_ytd
+        warehouseCollection.updateOne(Filters.eq("_id", Integer.parseInt(wId)), new Document("$inc", new Document("w_ytd", payment)));
+
+        // Update d_ytd
+        districtCollection.updateOne(Filters.eq("_id", wdId), new Document("$inc", new Document("d_ytd", payment)));
+
+        // Update customer
+        customerCollection.updateOne(Filters.eq("_id", wdcId), new Document("$inc", new Document("c_balance", -payment)
+                .append("c_ytd_payment", payment)
+                .append("c_payment_cnt", 1)
+        ));
     }
 
-    private void processNewOrderXact(String[] data) {
+    private void processNewOrderXact(String[] data) throws IOException {
         String cId = data[1];
         String wId = data[2];
         String dId = data[3];
@@ -154,12 +352,86 @@ public class XactProcessor {
         double totalAmount = 0;
         int oAllLocal = 1;
 
-        List<String> itemNumberList = new ArrayList<String>();
-        List<String> iNameList = new ArrayList<String>();
-        List<String> supplyWarehouseList = new ArrayList<String>();
-        List<String> quantityList = new ArrayList<String>();
-        List<String> olAmountList = new ArrayList<String>();
-        List<String> sQuantityList = new ArrayList<String>();
+        long wdId = Long.parseLong(wId);
+        wdId <<= 4;
+        wdId += Long.parseLong(dId);
+
+        // Get and update d_next_o_id
+        int dNextOId = districtNextOIdCollection.findOneAndUpdate(Filters.eq("_id", wdId), new Document("$inc", new Document("d_next_o_id", 1))).get("d_next_o_id", Integer.class);
+
+        long wdoId = wdId;
+        wdoId <<= 24;
+        wdoId += dNextOId;
+
+        List<Document> orderLineList = new ArrayList<Document>();
+        List<Document> orderLineUnusedList = new ArrayList<Document>();
+
+        List<String> popularIName = new ArrayList<String>();
+        double maxQuantity = 0;
+
+        for (int i = 1; i <= m; i++) {
+            String[] itemData = br.readLine().split(",");
+            String olIId = itemData[0];
+            String olSupplyWId = itemData[1];
+            String olQuantity = itemData[2];
+
+            oAllLocal = olSupplyWId.equals(wId) ? 1 : 0;
+            int iIdInt = Integer.parseInt(olIId);
+
+            // Get i_price
+            Document item = itemCollection.find(Filters.eq("_id", iIdInt)).first();
+            double iPrice = item.get("i_price", Double.class);
+
+            // Calculate ol_amount
+            double olAmount = Double.parseDouble(olQuantity) * iPrice;
+
+            // Get stock info
+            long wiId = Long.parseLong(wId);
+            wiId <<= 17;
+            wiId += iIdInt;
+            Document stock = stockStaticCollection.find(Filters.eq("_id", wiId)).first();
+            String stockInfo = stock.get("s_dist_" + dId, String.class);
+
+            // Calculate popular
+            double quantity = Double.parseDouble(olQuantity);
+            if (quantity > maxQuantity) {
+                maxQuantity = quantity;
+                popularIName.clear();
+                popularIName.add(item.get("i_name", String.class));
+            } else if (quantity == maxQuantity) {
+                popularIName.add(item.get("i_name", String.class));
+            }
+
+            // Add to orderLineUnusedList
+            long wdoolId = wdoId;
+            wdoolId <<= 5;
+            wdoolId += i;
+            orderLineUnusedList.add(DocCreator.createOrderLineUnusedDoc(wdoolId, stockInfo));
+
+            // Add to orderLineList
+            orderLineList.add(DocCreator.createOrderLineDoc(Integer.toString(i),
+                    DocCreator.createItemDoc(olIId, item.get("i_name", String.class), iPrice, item.get("i_im_id", Integer.class)),
+                    null,
+                    Double.toString(olAmount),
+                    olSupplyWId,
+                    olQuantity
+                ));
+        }
+
+        // Insert to orderLineUnusedCollection
+        orderLineUnusedCollection.insertMany(orderLineUnusedList, new InsertManyOptions().ordered(false));
+
+        // Insert to orderCollection
+        String oEntryD = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(Calendar.getInstance());
+        orderCollection.insertOne(DocCreator.createOrderWithOrderLinePopularDoc(wdoId, cId, null, Integer.toString(m), Integer.toString(oAllLocal), oEntryD, orderLineList, popularIName, maxQuantity));
+
+        // Update district
+        List<Document> list = new ArrayList<Document>();
+        list.add(new Document("o_id", dNextOId).append("c_id", Integer.parseInt(cId)));
+        districtCollection.updateOne(Filters.eq("_id", wdId),
+                new Document("$push",
+                        new Document("d_o_to_c_list",
+                                new Document("$each", list).append("$sort", new Document("o_id", 1)))));
     }
 
     public static void main(String[] args) {

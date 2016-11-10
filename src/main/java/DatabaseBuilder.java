@@ -2,10 +2,7 @@ import com.mongodb.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
-import com.mongodb.client.model.BulkWriteOptions;
-import com.mongodb.client.model.Filters;
-import com.mongodb.client.model.UpdateOneModel;
-import com.mongodb.client.model.WriteModel;
+import com.mongodb.client.model.*;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 import org.bson.Document;
@@ -14,8 +11,6 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.*;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Stream;
 
@@ -101,6 +96,8 @@ public class DatabaseBuilder {
         if (orderLinePath != null) {
             loadOrderLineData(orderLinePath);
         }
+
+        postProcess();
     }
 
     private void setupLogger() {
@@ -165,80 +162,30 @@ public class DatabaseBuilder {
             wdcId <<= 21;
             wdcId += Long.parseLong(cId);
 
-            customerList.add(createCustomerDoc(wdcId, cBalance, cYtdPayment, cPaymentCnt, cDeliveryCnt));
-            customerStaticList.add(createCustomerStaticDoc(wdcId, cFirst, cMiddle, cLast, cStreet1, cStreet2, cCity, cState, cZip, cPhone, cSince, cCredit, cCreditLim, cDiscount));
-            customerUnusedList.add(createCustomerUnusedDoc(wdcId, cData));
+            customerList.add(DocCreator.createCustomerDoc(wdcId, cBalance, cYtdPayment, cPaymentCnt, cDeliveryCnt));
+            customerStaticList.add(DocCreator.createCustomerStaticDoc(wdcId, cFirst, cMiddle, cLast, cStreet1, cStreet2, cCity, cState, cZip, cPhone, cSince, cCredit, cCreditLim, cDiscount));
+            customerUnusedList.add(DocCreator.createCustomerUnusedDoc(wdcId, cData));
 
             if (customerList.size() >= INSERT_THRESHOLD) {
-                customerCollection.insertMany(customerList);
+                customerCollection.insertMany(customerList, new InsertManyOptions().ordered(false));
                 customerList.clear();
-                customerStaticCollection.insertMany(customerStaticList);
+                customerStaticCollection.insertMany(customerStaticList, new InsertManyOptions().ordered(false));
                 customerStaticList.clear();
-                customerUnusedCollection.insertMany(customerUnusedList);
+                customerUnusedCollection.insertMany(customerUnusedList, new InsertManyOptions().ordered(false));
                 customerUnusedList.clear();
             }
         });
 
         if (!customerList.isEmpty()) {
-            customerCollection.insertMany(customerList);
-            customerStaticCollection.insertMany(customerStaticList);
-            customerUnusedCollection.insertMany(customerUnusedList);
+            customerCollection.insertMany(customerList, new InsertManyOptions().ordered(false));
+            customerStaticCollection.insertMany(customerStaticList, new InsertManyOptions().ordered(false));
+            customerUnusedCollection.insertMany(customerUnusedList, new InsertManyOptions().ordered(false));
         }
 
         // Create index on c_balance
         customerCollection.createIndex(new Document("c_balance", -1));
 
         logger.info("Complete loading custom collection!");
-    }
-
-    private Document createCustomerDoc(long wdcId, String cBalance, String cYtdPayment, String cPaymentCnt, String cDeliveryCnt) {
-        return new Document("_id", wdcId)
-                .append("c_balance", Double.parseDouble(cBalance))
-                .append("c_ytd_payment", Float.parseFloat(cYtdPayment))
-                .append("c_payment_cnt", Integer.parseInt(cPaymentCnt))
-                .append("c_delivery_cnt", Integer.parseInt(cDeliveryCnt))
-                .append("c_last_o_id", -1);
-    }
-
-    private Document createCustomerStaticDoc(long wdcId, String cFirst, String cMiddle, String cLast, String cStreet1, String cStreet2, String cCity, String cState, String cZip, String cPhone, String cSince, String cCredit, String cCreditLim, String cDiscount) {
-        try {
-            return new Document("_id", wdcId)
-                    .append("c_first", cFirst)
-                    .append("c_middle", cMiddle)
-                    .append("c_last", cLast)
-                    .append("c_street_1", cStreet1)
-                    .append("c_street_2", cStreet2)
-                    .append("c_city", cCity)
-                    .append("c_state", cState)
-                    .append("c_zip", cZip)
-                    .append("c_phone", cPhone)
-                    .append("c_since", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").parse(cSince))
-                    .append("c_credit", cCredit)
-                    .append("c_credit_lim", Double.parseDouble(cCreditLim))
-                    .append("c_discount", Double.parseDouble(cDiscount));
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-
-        return new Document("_id", wdcId)
-                .append("c_first", cFirst)
-                .append("c_middle", cMiddle)
-                .append("c_last", cLast)
-                .append("c_street_1", cStreet1)
-                .append("c_street_2", cStreet2)
-                .append("c_city", cCity)
-                .append("c_state", cState)
-                .append("c_zip", cZip)
-                .append("c_phone", cPhone)
-                .append("c_since", cSince)
-                .append("c_credit", cCredit)
-                .append("c_credit_lim", Double.parseDouble(cCreditLim))
-                .append("c_discount", Double.parseDouble(cDiscount));
-    }
-
-    private Document createCustomerUnusedDoc(long wdcId, String cData) {
-        return new Document("_id", wdcId)
-                .append("c_data", cData);
     }
 
     private void loadDistrictData(Path path) throws IOException {
@@ -278,48 +225,27 @@ public class DatabaseBuilder {
             wdId <<= 4;
             wdId += Long.parseLong(dId);
 
-            districtList.add(createDistrictDoc(wdId, dYtd));
-            districtNextOIdList.add(createDistrictNextOIdDoc(wdId, dNextOId));
-            districtStaticList.add(createDistrictStatic(wdId, dName, dStreet1, dStreet2, dCity, dState, dZip, dTax));
+            districtList.add(DocCreator.createDistrictDoc(wdId, dYtd));
+            districtNextOIdList.add(DocCreator.createDistrictNextOIdDoc(wdId, dNextOId));
+            districtStaticList.add(DocCreator.createDistrictStatic(wdId, dName, dStreet1, dStreet2, dCity, dState, dZip, dTax));
 
             if (districtList.size() >= INSERT_THRESHOLD) {
-                districtCollection.insertMany(districtList);
+                districtCollection.insertMany(districtList, new InsertManyOptions().ordered(false));
                 districtList.clear();
-                districtNextOIdCollection.insertMany(districtNextOIdList);
+                districtNextOIdCollection.insertMany(districtNextOIdList, new InsertManyOptions().ordered(false));
                 districtNextOIdList.clear();
-                districtStaticCollection.insertMany(districtStaticList);
+                districtStaticCollection.insertMany(districtStaticList, new InsertManyOptions().ordered(false));
                 districtStaticList.clear();
             }
         });
 
         if (!districtList.isEmpty()) {
-            districtCollection.insertMany(districtList);
-            districtNextOIdCollection.insertMany(districtNextOIdList);
-            districtStaticCollection.insertMany(districtStaticList);
+            districtCollection.insertMany(districtList, new InsertManyOptions().ordered(false));
+            districtNextOIdCollection.insertMany(districtNextOIdList, new InsertManyOptions().ordered(false));
+            districtStaticCollection.insertMany(districtStaticList, new InsertManyOptions().ordered(false));
         }
 
         logger.info("Complete loading district collection!");
-    }
-
-    private Document createDistrictDoc(long wdId, String dYtd) {
-        return new Document("_id", wdId)
-                .append("d_ytd", Double.parseDouble(dYtd));
-    }
-
-    private Document createDistrictNextOIdDoc(long wdId, String dNextOId) {
-        return new Document("_id", wdId)
-                .append("d_next_o_id", Integer.parseInt(dNextOId));
-    }
-
-    private Document createDistrictStatic(long wdId, String dName, String dStreet1, String dStreet2, String dCity, String dState, String dZip, String dTax) {
-        return new Document("_id", wdId)
-                .append("d_name", dName)
-                .append("d_street_1", dStreet1)
-                .append("d_street_2", dStreet2)
-                .append("d_city", dCity)
-                .append("d_state", dState)
-                .append("d_zip", dZip)
-                .append("d_tax", Double.parseDouble(dTax));
     }
 
     private void loadItemData(Path path) throws IOException {
@@ -345,35 +271,23 @@ public class DatabaseBuilder {
             String iImId = content[3];
             String iData = content[4];
 
-            itemList.add(createItemDoc(iId, iName, iPrice, iImId));
-            itemUnusedList.add(createItemUnusedDoc(iId, iData));
+            itemList.add(DocCreator.createItemDoc(iId, iName, iPrice, iImId));
+            itemUnusedList.add(DocCreator.createItemUnusedDoc(iId, iData));
 
             if (itemList.size() >= INSERT_THRESHOLD) {
-                itemCollection.insertMany(itemList);
+                itemCollection.insertMany(itemList, new InsertManyOptions().ordered(false));
                 itemList.clear();
-                itemUnusedCollection.insertMany(itemUnusedList);
+                itemUnusedCollection.insertMany(itemUnusedList, new InsertManyOptions().ordered(false));
                 itemUnusedList.clear();
             }
         });
 
         if (!itemList.isEmpty()) {
-            itemCollection.insertMany(itemList);
-            itemUnusedCollection.insertMany(itemUnusedList);
+            itemCollection.insertMany(itemList, new InsertManyOptions().ordered(false));
+            itemUnusedCollection.insertMany(itemUnusedList, new InsertManyOptions().ordered(false));
         }
 
         logger.info("Complete loading item collection!");
-    }
-
-    private Document createItemDoc(String iId, String iName, String iPrice, String iImId) {
-        return new Document("_id", Integer.parseInt(iId))
-                .append("i_name", iName)
-                .append("i_price", Double.parseDouble(iPrice))
-                .append("i_im_id", Integer.parseInt(iImId));
-    }
-
-    private Document createItemUnusedDoc(String iId, String iData) {
-        return new Document("_id", Integer.parseInt(iId))
-                .append("i_data", iData);
     }
 
     private void loadOrderData(Path path) throws IOException {
@@ -384,9 +298,13 @@ public class DatabaseBuilder {
 
         MongoCollection<Document> orderCollection = db.getCollection(COLLECTION_ORDER);
         MongoCollection<Document> customerCollection = db.getCollection(COLLECTION_CUSTOMER);
+        MongoCollection<Document> districtCollection = db.getCollection(COLLECTION_DISTRICT);
 
         Stream<String> orders = Files.lines(path);
         List<Document> orderList = new ArrayList<Document>();
+
+        // Updates for district
+        List<WriteModel<Document>> districtUpdates = new ArrayList<WriteModel<Document>>();
 
         // c_last_o_id map
         Map<Long, Integer> cLastOIdMap = new HashMap<Long, Integer>();
@@ -405,6 +323,9 @@ public class DatabaseBuilder {
             long wdoId = Long.parseLong(wId);
             wdoId <<= 4;
             wdoId += Long.parseLong(dId);
+
+            long wdId = wdoId;
+
             wdoId <<= 24;
             wdoId += Long.parseLong(oId);
 
@@ -414,7 +335,18 @@ public class DatabaseBuilder {
             wdcId <<= 21;
             wdcId += Long.parseLong(cId);
 
-            orderList.add(createOrderDoc(wdoId, cId, oCarrierId, oOlCnt, oAllLocal, oEntryD));
+            orderList.add(DocCreator.createOrderDoc(wdoId, cId, oCarrierId, oOlCnt, oAllLocal, oEntryD));
+
+            // Add to districtUpdates if carrier id is null
+            List<Document> list = new ArrayList<Document>();
+            list.add(new Document("o_id", Integer.parseInt(oId)).append("c_id", Integer.parseInt(cId)));
+
+            if (oCarrierId.equals("null")) {
+                districtUpdates.add(new UpdateOneModel<Document>(Filters.eq("_id", wdId),
+                        new Document("$push",
+                                new Document("d_o_to_c_list",
+                                        new Document("$each", list).append("$sort", new Document("o_id", 1))))));
+            }
 
             // Update c_last_o_id
             int oIdInt = Integer.parseInt(oId);
@@ -427,13 +359,19 @@ public class DatabaseBuilder {
             }
 
             if (orderList.size() >= INSERT_THRESHOLD) {
-                orderCollection.insertMany(orderList);
+                orderCollection.insertMany(orderList, new InsertManyOptions().ordered(false));
                 orderList.clear();
+                districtCollection.bulkWrite(districtUpdates);
+                districtUpdates.clear();
             }
         });
 
         if (!orderList.isEmpty()) {
-            orderCollection.insertMany(orderList);
+            orderCollection.insertMany(orderList, new InsertManyOptions().ordered(false));
+        }
+
+        if (!districtUpdates.isEmpty()) {
+            districtCollection.bulkWrite(districtUpdates);
         }
 
         // Prepare bulk updates
@@ -449,26 +387,6 @@ public class DatabaseBuilder {
         }
 
         logger.info("Complete loading orders collection!");
-    }
-
-    private Document createOrderDoc(long wdoId, String cId, String oCarrierId, String oOlCnt, String oAllLocal, String oEntryD) {
-        try {
-            return new Document("_id", wdoId)
-                    .append("c_id", Integer.parseInt(cId))
-                    .append("o_carrier_id", oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
-                    .append("o_ol_cnt", Double.parseDouble(oOlCnt))
-                    .append("o_all_local", Double.parseDouble(oAllLocal))
-                    .append("o_entry_d", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").parse(oEntryD));
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-
-        return new Document("_id", wdoId)
-                .append("c_id", cId)
-                .append("o_carrier_id", oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
-                .append("o_ol_cnt", Double.parseDouble(oOlCnt))
-                .append("o_all_local", Double.parseDouble(oAllLocal))
-                .append("o_entry_d", oEntryD);
     }
 
     private void loadOrderLineData(Path path) throws IOException {
@@ -508,31 +426,24 @@ public class DatabaseBuilder {
 
             // Add update model
             long wdoId = wdoolId;
-            MongoCursor<Document> itemResult = itemCollection.find(Filters.eq("_id", Integer.parseInt(iId))).iterator();
-            Document item = null;
-            if (itemResult.hasNext()) {
-                item = itemResult.next();
-            }
+            Document item = itemCollection.find(Filters.eq("_id", Integer.parseInt(iId))).first();
 
-            updates.add(new UpdateOneModel<Document>(Filters.eq("_id", wdoId), new Document("$push", new Document("ol_list", new Document("ol_number", Integer.parseInt(olNumber))
-                    .append("ol_item", new Document("i_id", Integer.parseInt(iId))
-                            .append("i_name", item.get("i_name", String.class))
-                            .append("i_price", item.get("i_price", Double.class))
-                            .append("i_im_id", item.get("i_im_id", Integer.class))
-                    )
-                    .append("ol_delivery_d", olDeliveryD.equals("null") ? null : olDeliveryD)
-                    .append("ol_amount", Double.parseDouble(olAmount))
-                    .append("ol_supply_w_id", Integer.parseInt(olSupplyWId))
-                    .append("ol_quantity", Double.parseDouble(olQuantity))
-            ))));
+            updates.add(new UpdateOneModel<Document>(Filters.eq("_id", wdoId), new Document("$push", new Document("ol_list",
+                    DocCreator.createOrderLineDoc(olNumber,
+                            DocCreator.createItemDoc(iId, item.get("i_name", String.class), item.get("i_price", Double.class), item.get("i_im_id", Integer.class)),
+                            olDeliveryD,
+                            olAmount,
+                            olSupplyWId,
+                            olQuantity
+                    )))));
 
             wdoolId <<= 5;
             wdoolId += Long.parseLong(olNumber);
 
-            orderLineUnusedList.add(createOrderLineUnusedDoc(wdoolId, olDistInfo));
+            orderLineUnusedList.add(DocCreator.createOrderLineUnusedDoc(wdoolId, olDistInfo));
 
             if (orderLineUnusedList.size() >= INSERT_THRESHOLD) {
-                orderLineUnusedCollection.insertMany(orderLineUnusedList);
+                orderLineUnusedCollection.insertMany(orderLineUnusedList, new InsertManyOptions().ordered(false));
                 orderLineUnusedList.clear();
                 orderCollection.bulkWrite(updates, new BulkWriteOptions().ordered(false));
                 updates.clear();
@@ -540,16 +451,11 @@ public class DatabaseBuilder {
         });
 
         if (!orderLineUnusedList.isEmpty()) {
-            orderLineUnusedCollection.insertMany(orderLineUnusedList);
-            orderCollection.bulkWrite(updates);
+            orderLineUnusedCollection.insertMany(orderLineUnusedList, new InsertManyOptions().ordered(false));
+            orderCollection.bulkWrite(updates, new BulkWriteOptions().ordered(false));
         }
 
         logger.info("Complete loading orderLine collection!");
-    }
-
-    private Document createOrderLineUnusedDoc(long wdoolId, String olDistInfo) {
-        return new Document("_id", wdoolId)
-                .append("ol_dist_info", olDistInfo);
     }
 
     private void loadStockData(Path path) throws IOException {
@@ -595,54 +501,27 @@ public class DatabaseBuilder {
             wiId <<= 17;
             wiId += Long.parseLong(iId);
 
-            stockList.add(createStockDoc(wiId, sQuantity, sYtd, sOrderCnt, sRemoteCnt));
-            stockStaticList.add(createStockStaticDoc(wiId, sDist01, sDist02, sDist03, sDist04, sDist05, sDist06, sDist07, sDist08, sDist09, sDist10));
-            stockUnusedList.add(createStockUnusedDoc(wiId, sData));
+            stockList.add(DocCreator.createStockDoc(wiId, sQuantity, sYtd, sOrderCnt, sRemoteCnt));
+            stockStaticList.add(DocCreator.createStockStaticDoc(wiId, sDist01, sDist02, sDist03, sDist04, sDist05, sDist06, sDist07, sDist08, sDist09, sDist10));
+            stockUnusedList.add(DocCreator.createStockUnusedDoc(wiId, sData));
 
             if (stockList.size() >= INSERT_THRESHOLD) {
-                stockCollection.insertMany(stockList);
+                stockCollection.insertMany(stockList, new InsertManyOptions().ordered(false));
                 stockList.clear();
-                stockStaticCollection.insertMany(stockStaticList);
+                stockStaticCollection.insertMany(stockStaticList, new InsertManyOptions().ordered(false));
                 stockStaticList.clear();
-                stockUnusedCollection.insertMany(stockUnusedList);
+                stockUnusedCollection.insertMany(stockUnusedList, new InsertManyOptions().ordered(false));
                 stockUnusedList.clear();
             }
         });
 
         if (!stockList.isEmpty()) {
-            stockCollection.insertMany(stockList);
-            stockStaticCollection.insertMany(stockStaticList);
-            stockUnusedCollection.insertMany(stockUnusedList);
+            stockCollection.insertMany(stockList, new InsertManyOptions().ordered(false));
+            stockStaticCollection.insertMany(stockStaticList, new InsertManyOptions().ordered(false));
+            stockUnusedCollection.insertMany(stockUnusedList, new InsertManyOptions().ordered(false));
         }
 
         logger.info("Complete loading stock collection!");
-    }
-
-    private Document createStockDoc(long wiId, String sQuantity, String sYtd, String sOrderCnt, String sRemoteCnt) {
-        return new Document("_id", wiId)
-                .append("s_quantity", Double.parseDouble(sQuantity))
-                .append("s_ytd", Double.parseDouble(sYtd))
-                .append("s_order_cnt", Integer.parseInt(sOrderCnt))
-                .append("s_remote_cnt", Integer.parseInt(sRemoteCnt));
-    }
-
-    private Document createStockStaticDoc(long wiId, String sDist01, String sDist02, String sDist03, String sDist04, String sDist05, String sDist06, String sDist07, String sDist08, String sDist09, String sDist10) {
-        return new Document("_id", wiId)
-                .append("s_dist_01", sDist01)
-                .append("s_dist_02", sDist02)
-                .append("s_dist_03", sDist03)
-                .append("s_dist_04", sDist04)
-                .append("s_dist_05", sDist05)
-                .append("s_dist_06", sDist06)
-                .append("s_dist_07", sDist07)
-                .append("s_dist_08", sDist08)
-                .append("s_dist_09", sDist09)
-                .append("s_dist_10", sDist10);
-    }
-
-    private Document createStockUnusedDoc(long wiId, String sData) {
-        return new Document("_id", wiId)
-                .append("s_data", sData);
     }
 
     private void loadWarehouseData(Path path) throws IOException {
@@ -672,20 +551,20 @@ public class DatabaseBuilder {
             String wTax = content[7];
             String wYtd = content[8];
 
-            warehouseList.add(createWarehouseDoc(wId, wYtd));
-            warehouseStaticList.add(createWarehouseStaticDoc(wId, wName, wStreet1, wStreet2, wCity, wState, wZip, wTax));
+            warehouseList.add(DocCreator.createWarehouseDoc(wId, wYtd));
+            warehouseStaticList.add(DocCreator.createWarehouseStaticDoc(wId, wName, wStreet1, wStreet2, wCity, wState, wZip, wTax));
 
             if (warehouseList.size() >= INSERT_THRESHOLD) {
-                warehouseCollection.insertMany(warehouseList);
+                warehouseCollection.insertMany(warehouseList, new InsertManyOptions().ordered(false));
                 warehouseList.clear();
-                warehouseStaticCollection.insertMany(warehouseStaticList);
+                warehouseStaticCollection.insertMany(warehouseStaticList, new InsertManyOptions().ordered(false));
                 warehouseStaticList.clear();
             }
         });
 
         if (!warehouseList.isEmpty()) {
-            warehouseCollection.insertMany(warehouseList);
-            warehouseStaticCollection.insertMany(warehouseStaticList);
+            warehouseCollection.insertMany(warehouseList, new InsertManyOptions().ordered(false));
+            warehouseStaticCollection.insertMany(warehouseStaticList, new InsertManyOptions().ordered(false));
         }
 
         warehouseCollection.updateOne(Filters.eq("_id", 1), new Document("$push", new Document("test", 1)));
@@ -695,24 +574,53 @@ public class DatabaseBuilder {
         logger.info("Complete loading warehouse collection!");
     }
 
-    private Document createWarehouseDoc(String wId, String wYtd) {
-        return new Document("_id", Integer.parseInt(wId))
-                .append("w_ytd", Double.parseDouble(wYtd));
+    private void postProcess() {
+        MongoCollection<Document> orderCollection = db.getCollection(COLLECTION_ORDER);
+
+        List<WriteModel<Document>> updates = new ArrayList<WriteModel<Document>>();
+
+        MongoCursor<Document> allOrder = orderCollection.find().iterator();
+        while (allOrder.hasNext()) {
+            Document order = allOrder.next();
+            List<Document> orderLineList = order.get("ol_list", List.class);
+
+            List<String> popularIName = new ArrayList<String>();
+            double maxQuantity = 0;
+            for (Document ol : orderLineList) {
+                double quantity = ol.get("ol_quantity", Double.class);
+                if (quantity > maxQuantity) {
+                    maxQuantity = quantity;
+                    popularIName.clear();
+                    popularIName.add(ol.get("ol_item", Document.class).get("i_name", String.class));
+                } else if (quantity == maxQuantity) {
+                    popularIName.add(ol.get("ol_item", Document.class).get("i_name", String.class));
+                }
+            }
+
+            // Add update to updates
+            updates.add(new UpdateOneModel<Document>(Filters.eq("_id", order.get("_id", Long.class)),
+                    new Document("$set", new Document("o_popular_i_name", popularIName).append("o_popular_ol_quantity", maxQuantity))));
+
+            if (updates.size() >= INSERT_THRESHOLD) {
+                orderCollection.bulkWrite(updates, new BulkWriteOptions().ordered(false));
+                updates.clear();
+            }
+        }
+
+        if (!updates.isEmpty()) {
+            orderCollection.bulkWrite(updates, new BulkWriteOptions().ordered(false));
+        }
     }
 
-    private Document createWarehouseStaticDoc(String wId, String wName, String wStreet1, String wStreet2, String wCity, String wState, String wZip, String wTax) {
-        return new Document("_id", Integer.parseInt(wId))
-                .append("w_name", wName)
-                .append("w_street_1", wStreet1)
-                .append("w_street_2", wStreet2)
-                .append("w_city", wCity)
-                .append("w_state", wState)
-                .append("w_zip", wZip)
-                .append("w_tax", Double.parseDouble(wTax));
+    public void test() {
+        MongoCollection<Document> t = db.getCollection(COLLECTION_WAREHOUSE);
+        ArrayList<Document> d = t.find(new Document("_id", 1)).projection(new Document("test", new Document("$slice", 1))).into(new ArrayList<>());
+        System.out.println(d.get(0).toJson());
     }
 
     public static void main(String[] args) throws IOException {
         DatabaseBuilder builder = new DatabaseBuilder(System.getProperty("user.dir") + "/d8", "d8_1");
-        builder.loadData();
+//        builder.loadData();
+        builder.test();
     }
 }
