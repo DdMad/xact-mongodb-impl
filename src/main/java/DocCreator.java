@@ -72,8 +72,8 @@ public class DocCreator {
             return new Document("_id", wdoId)
                     .append("c_id", Integer.parseInt(cId))
                     .append("o_carrier_id", oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
-                    .append("o_ol_cnt", Double.parseDouble(oOlCnt))
-                    .append("o_all_local", Double.parseDouble(oAllLocal))
+                    .append("o_ol_cnt", Integer.parseInt(oOlCnt))
+                    .append("o_all_local", Integer.parseInt(oAllLocal))
                     .append("o_entry_d", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").parse(oEntryD));
         } catch (ParseException e) {
             e.printStackTrace();
@@ -82,22 +82,23 @@ public class DocCreator {
         return new Document("_id", wdoId)
                 .append("c_id", cId)
                 .append("o_carrier_id", oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
-                .append("o_ol_cnt", Double.parseDouble(oOlCnt))
-                .append("o_all_local", Double.parseDouble(oAllLocal))
+                .append("o_ol_cnt", Integer.parseInt(oOlCnt))
+                .append("o_all_local", Integer.parseInt(oAllLocal))
                 .append("o_entry_d", oEntryD);
     }
 
-    public static Document createOrderWithOrderLinePopularDoc(long wdoId, String cId, String oCarrierId, String oOlCnt, String oAllLocal, String oEntryD, List<Document> orderLineList, List<String> oPopularIName, double oPopularOlQuantity) {
+    public static Document createOrderWithOrderLinePopularTotalAmountDoc(long wdoId, String cId, String oCarrierId, String oOlCnt, String oAllLocal, String oEntryD, List<Document> orderLineList, List<String> oPopularIName, double oPopularOlQuantity, double oTotalAmount) {
         try {
             return new Document("_id", wdoId)
                     .append("c_id", Integer.parseInt(cId))
                     .append("o_carrier_id", oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
-                    .append("o_ol_cnt", Double.parseDouble(oOlCnt))
-                    .append("o_all_local", Double.parseDouble(oAllLocal))
+                    .append("o_ol_cnt", Integer.parseInt(oOlCnt))
+                    .append("o_all_local", Integer.parseInt(oAllLocal))
                     .append("o_entry_d", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").parse(oEntryD))
                     .append("ol_list", orderLineList)
                     .append("o_popular_i_name", oPopularIName)
-                    .append("o_popular_ol_quantity", oPopularOlQuantity);
+                    .append("o_popular_ol_quantity", oPopularOlQuantity)
+                    .append("o_total_amount", oTotalAmount);
         } catch (ParseException e) {
             e.printStackTrace();
         }
@@ -105,12 +106,13 @@ public class DocCreator {
         return new Document("_id", wdoId)
                 .append("c_id", cId)
                 .append("o_carrier_id", oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
-                .append("o_ol_cnt", Double.parseDouble(oOlCnt))
-                .append("o_all_local", Double.parseDouble(oAllLocal))
+                .append("o_ol_cnt", Integer.parseInt(oOlCnt))
+                .append("o_all_local", Integer.parseInt(oAllLocal))
                 .append("o_entry_d", oEntryD)
                 .append("ol_list", orderLineList)
                 .append("o_popular_i_name", oPopularIName)
-                .append("o_popular_ol_quantity", oPopularOlQuantity);
+                .append("o_popular_ol_quantity", oPopularOlQuantity)
+                .append("o_total_amount", oTotalAmount);
     }
 
     public static Document createItemDoc(String iId, String iName, String iPrice, String iImId) {

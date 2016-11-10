@@ -309,12 +309,20 @@ public class XactProcessor {
                 wdcId <<= 21;
                 wdcId += (long)((Document)district.get("d_o_to_c_list", List.class).get(0)).get("c_id", Integer.class);
 
+                // Get order
+                Document order = orderCollection.find(Filters.eq("_id", wdoId)).first();
+                int m = order.get("o_ol_cnt", Integer.class);
+                double totalAmount = order.get("o_total_amount", Double.class);
+
                 // Add order update
                 orderUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdoId), new Document("$set", new Document("o_carrier_id", carrierId))));
-                orderUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdoId), new Document()));
+                String olDeliveryD = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(Calendar.getInstance());
+                for (int j = 0; j < m; j++) {
+                    orderUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdoId), new Document("$set", new Document("ol_list."+j+"ol_delivery_d", olDeliveryD))));
+                }
 
                 // Add customer update
-                customerUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdcId), new Document("$inc", )));
+                customerUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdcId), new Document("$inc", new Document("c_balance", totalAmount).append("c_delivery_cnt", 1))));
 
                 // Add district update
                 districtUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdId), new Document("$pop", new Document("d_o_to_c_list", -1))));
@@ -356,7 +364,6 @@ public class XactProcessor {
         String wId = data[2];
         String dId = data[3];
         int m = Integer.parseInt(data[4]);
-        double totalAmount = 0;
         int oAllLocal = 1;
 
         long wdId = Long.parseLong(wId);
@@ -375,6 +382,7 @@ public class XactProcessor {
 
         List<String> popularIName = new ArrayList<String>();
         double maxQuantity = 0;
+        double oTotalAmount = 0;
 
         for (int i = 1; i <= m; i++) {
             String[] itemData = br.readLine().split(",");
@@ -391,6 +399,9 @@ public class XactProcessor {
 
             // Calculate ol_amount
             double olAmount = Double.parseDouble(olQuantity) * iPrice;
+
+            // Calculate order total amount
+            oTotalAmount += olAmount;
 
             // Get stock info
             long wiId = Long.parseLong(wId);
@@ -430,7 +441,7 @@ public class XactProcessor {
 
         // Insert to orderCollection
         String oEntryD = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(Calendar.getInstance());
-        orderCollection.insertOne(DocCreator.createOrderWithOrderLinePopularDoc(wdoId, cId, null, Integer.toString(m), Integer.toString(oAllLocal), oEntryD, orderLineList, popularIName, maxQuantity));
+        orderCollection.insertOne(DocCreator.createOrderWithOrderLinePopularTotalAmountDoc(wdoId, cId, null, Integer.toString(m), Integer.toString(oAllLocal), oEntryD, orderLineList, popularIName, maxQuantity, oTotalAmount));
 
         // Update district
         List<Document> list = new ArrayList<Document>();
