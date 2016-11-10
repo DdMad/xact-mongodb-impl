@@ -201,7 +201,7 @@ public class XactProcessor {
             int wId = (int)(wdId >> 4);
 
             // Get district static
-            Document districtStatic = districtStaticCollection.find(new Document("_id", wdcId)).first();
+            Document districtStatic = districtStaticCollection.find(new Document("_id", wdId)).first();
 
             // Get warehouse static
             Document warehouseStatic = warehouseStaticCollection.find(new Document("_id", wId)).first();
@@ -280,9 +280,13 @@ public class XactProcessor {
             bw.write(String.format("%s,%s,%s,%s,%s", wdoIdLong & 0xffffff, order.get("o_entry_d", Date.class), customerStatic.get("c_first", String.class), customerStatic.get("c_middle", String.class), customerStatic.get("c_last", String.class)));
             bw.newLine();
             double oPopularOlQuantity = order.get("o_popular_ol_quantity", Double.class);
-            for (String iName : (List<String>)order.get("p_popular_i_name", List.class)) {
-                bw.write(String.format("%s,%s", iName ,oPopularOlQuantity));
-                bw.newLine();
+
+            List<String> iNameList = order.get("p_popular_i_name", List.class);
+            if (iNameList != null && iNameList.size() != 0) {
+                for (String iName : iNameList) {
+                    bw.write(String.format("%s,%s", iName ,oPopularOlQuantity));
+                    bw.newLine();
+                }
             }
         }
 
@@ -375,7 +379,7 @@ public class XactProcessor {
         bw.write(String.format("%s,%s,%s", cLastOId, lastOrder.get("o_entry_d", Date.class), lastOrder.get("o_carrier_id", Integer.class)));
         bw.newLine();
         for (Document ol : (List<Document>)lastOrder.get("ol_list", List.class)) {
-            bw.write(String.format("%s,%s,%s,%s,%s", ol.get("ol_item", Document.class).get("_id", Integer.class), ol.get("ol_supply_w_id", Integer.class), ol.get("ol_quantity", Double.class), ol.get("ol_amount", Double.class), ol.get("ol_delivery_d", Date.class)));
+            bw.write(String.format("%s,%s,%s,%s,%s", ol.get("ol_item", Document.class).get("_id", Integer.class), ol.get("ol_supply_w_id", Integer.class), ol.get("ol_quantity", Double.class), ol.get("ol_amount", Double.class), ol.get("ol_delivery_d", String.class)));
             bw.newLine();
         }
         bw.flush();
@@ -651,7 +655,7 @@ public class XactProcessor {
     }
 
     public static void main(String[] args) throws IOException {
-        XactProcessor processor = new XactProcessor(System.getProperty("user.dir") + "/d8-xact/0.txt", "d8_1");
+        XactProcessor processor = new XactProcessor(System.getProperty("user.dir") + "/d8-xact/8.txt", "d8_1");
         processor.processXact(new long[7], new long[7]);
     }
 }
