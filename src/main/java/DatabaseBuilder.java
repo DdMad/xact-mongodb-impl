@@ -586,6 +586,8 @@ public class DatabaseBuilder {
 
             List<String> popularIName = new ArrayList<String>();
             double maxQuantity = 0;
+            double oTotalAmount = 0;
+
             for (Document ol : orderLineList) {
                 double quantity = ol.get("ol_quantity", Double.class);
                 if (quantity > maxQuantity) {
@@ -595,11 +597,13 @@ public class DatabaseBuilder {
                 } else if (quantity == maxQuantity) {
                     popularIName.add(ol.get("ol_item", Document.class).get("i_name", String.class));
                 }
+
+                oTotalAmount += ol.get("ol_amount", Double.class);
             }
 
             // Add update to updates
             updates.add(new UpdateOneModel<Document>(Filters.eq("_id", order.get("_id", Long.class)),
-                    new Document("$set", new Document("o_popular_i_name", popularIName).append("o_popular_ol_quantity", maxQuantity))));
+                    new Document("$set", new Document("o_popular_i_name", popularIName).append("o_popular_ol_quantity", maxQuantity).append("o_total_amount", oTotalAmount))));
 
             if (updates.size() >= INSERT_THRESHOLD) {
                 orderCollection.bulkWrite(updates, new BulkWriteOptions().ordered(false));
