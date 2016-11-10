@@ -186,9 +186,31 @@ public class XactProcessor {
         return count;
     }
 
-    private void processTopBalanceXact() {
+    private void processTopBalanceXact() throws IOException {
         // Get top 10 customers
         MongoCursor<Document> top10Customers = customerCollection.find().limit(10).iterator();
+
+        /**************** Output ****************/
+        while (top10Customers.hasNext()) {
+            Document customer = top10Customers.next();
+            long wdcId = customer.get("_id", Long.class);
+
+            // Get customer static
+            Document customerStatic = customerStaticCollection.find(new Document("_id", wdcId)).first();
+
+            long wdId = wdcId >> 21;
+            int wId = (int)(wdId >> 4);
+
+            // Get district static
+            Document districtStatic = districtStaticCollection.find(new Document("_id", wdcId)).first();
+
+            // Get warehouse static
+            Document warehouseStatic = warehouseStaticCollection.find(new Document("_id", wId)).first();
+
+            bw.write(String.format("%s,%s,%s,%s,%s,%s", customerStatic.get("c_first", String.class), customerStatic.get("c_middle", String.class), customerStatic.get("c_last", String.class), customer.get("c_balance", Double.class), warehouseStatic.get("w_name", String.class), districtStatic.get("d_name", String.class)));
+            bw.newLine();
+        }
+        bw.flush();
     }
 
     private void processPopularItemXact(String[] data) {
@@ -247,7 +269,7 @@ public class XactProcessor {
         }
     }
 
-    private void processStockLevelXact(String[] data) {
+    private void processStockLevelXact(String[] data) throws IOException {
         String wId = data[1];
         String dId = data[2];
         double stockThreshold = Double.parseDouble(data[3]);
@@ -286,6 +308,11 @@ public class XactProcessor {
                 }
             }
         }
+
+        /**************** Output ****************/
+        bw.write(String.format("%s", count));
+        bw.newLine();
+        bw.flush();
     }
 
     private void processOrderStatusXact(String[] data) throws IOException {
