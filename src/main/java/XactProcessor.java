@@ -303,11 +303,18 @@ public class XactProcessor {
                 Document district = districtList.get(0);
                 long wdoId = wdId;
                 wdoId <<= 24;
-                wdoId += (long)district.get("d_o_to_c_list", List.class).get(0);
+                wdoId += (long)((Document)district.get("d_o_to_c_list", List.class).get(0)).get("o_id", Integer.class);
+
+                long wdcId = wdId;
+                wdcId <<= 21;
+                wdcId += (long)((Document)district.get("d_o_to_c_list", List.class).get(0)).get("c_id", Integer.class);
 
                 // Add order update
                 orderUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdoId), new Document("$set", new Document("o_carrier_id", carrierId))));
                 orderUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdoId), new Document()));
+
+                // Add customer update
+                customerUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdcId), new Document("$inc", )));
 
                 // Add district update
                 districtUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdId), new Document("$pop", new Document("d_o_to_c_list", -1))));
