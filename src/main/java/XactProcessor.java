@@ -208,7 +208,7 @@ public class XactProcessor {
         wdoId += dNextOId;
 
         // Get L orders
-        MongoCursor<Document> lastLOrders = orderCollection.find(new Document("$gte", new Document("_id", wdoId - lastOrderAmount)).append("$lt", new Document("_id", wdoId))).iterator();
+        MongoCursor<Document> lastLOrders = orderCollection.find(Filters.and(Filters.gte("_id", wdoId - lastOrderAmount), Filters.lt("_id", wdoId))).iterator();
         List<Document> lastLOrderList = new ArrayList<Document>();
         while (lastLOrders.hasNext()) {
             lastLOrderList.add(lastLOrders.next());
@@ -218,28 +218,30 @@ public class XactProcessor {
         Map<String, Double> popularity = new HashMap<String, Double>();
 
         for (Document o1 : lastLOrderList) {
-            String iName = o1.get("o_popular_i_name", String.class);
-            if (popularity.containsKey(iName)) {
-                continue;
-            } else {
-                popularity.put(iName, 0.0);
-            }
-
-            for (Document o2: lastLOrderList) {
-                boolean find = false;
-                List<Document> olList = o2.get("ol_list", List.class);
-
-                for (Document ol : olList) {
-                    String s = ol.get("ol_item", Document.class).get("i_name", String.class);
-
-                    if (s.equals(iName)) {
-                        find = true;
-                        break;
-                    }
+            List<String> iNameList = o1.get("o_popular_i_name", List.class);
+            for (String iName : iNameList) {
+                if (popularity.containsKey(iName)) {
+                    continue;
+                } else {
+                    popularity.put(iName, 0.0);
                 }
 
-                if (find) {
-                    popularity.put(iName, popularity.get(iName) + 1.0);
+                for (Document o2: lastLOrderList) {
+                    boolean find = false;
+                    List<Document> olList = o2.get("ol_list", List.class);
+
+                    for (Document ol : olList) {
+                        String s = ol.get("ol_item", Document.class).get("i_name", String.class);
+
+                        if (s.equals(iName)) {
+                            find = true;
+                            break;
+                        }
+                    }
+
+                    if (find) {
+                        popularity.put(iName, popularity.get(iName) + 1.0);
+                    }
                 }
             }
         }
@@ -263,7 +265,7 @@ public class XactProcessor {
         wdoId += dNextOId;
 
         // Get L orders
-        MongoCursor<Document> lastLOrders = orderCollection.find(new Document("$gte", new Document("_id", wdoId - lastOrderAmount)).append("$lt", new Document("_id", wdoId))).iterator();
+        MongoCursor<Document> lastLOrders = orderCollection.find(Filters.and(Filters.gte("_id", wdoId - lastOrderAmount), Filters.lt("_id", wdoId))).iterator();
 
         // Calculate total number of items that has less stock
         int count = 0;
@@ -276,7 +278,7 @@ public class XactProcessor {
                 // Get stock
                 long wiId = Long.parseLong(wId);
                 wiId <<= 17;
-                wiId += ol.get("ol_item", Document.class).get("i_id", Integer.class);
+                wiId += ol.get("ol_item", Document.class).get("_id", Integer.class);
                 double sQuantity = stockCollection.find(Filters.eq("_id", wiId)).first().get("s_quantity", Double.class);
 
                 if (sQuantity < stockThreshold) {
@@ -286,10 +288,45 @@ public class XactProcessor {
         }
     }
 
-    private void processOrderStatusXact(String[] data) {
+    private void processOrderStatusXact(String[] data) throws IOException {
         String wId = data[1];
         String dId = data[2];
         String cId = data[3];
+
+        long wdId = Long.parseLong(wId);
+        wdId <<= 4;
+        wdId += Long.parseLong(dId);
+
+        long wdcId = wdId;
+        wdcId <<= 21;
+        wdcId += Long.parseLong(cId);
+
+        Document customerStatic = customerStaticCollection.find(new Document("_id", wdcId)).first();
+        Document customer = customerCollection.find(new Document("_id", wdcId)).first();
+
+        // Get c_last_o_id
+        int cLastOId = customer.get("c_last_o_id", Integer.class);
+
+        // Get c_balance
+        double cBalance = customer.get("c_balance", Double.class);
+
+        long wdoId = wdId;
+        wdoId <<= 24;
+        wdoId += cLastOId;
+
+        // Get last order
+        Document lastOrder = orderCollection.find(new Document("_id", wdoId)).first();
+
+        /**************** Output ****************/
+        bw.write(String.format("%s,%s,%s,%s", customerStatic.get("c_first", String.class), customerStatic.get("c_middle", String.class), customerStatic.get("c_last", String.class), cBalance));
+        bw.newLine();
+        bw.write(String.format("%s,%s,%s", cLastOId, lastOrder.get("o_entry_d", Date.class), lastOrder.get("o_carrier_id", Integer.class)));
+        bw.newLine();
+        for (Document ol : (List<Document>)lastOrder.get("ol_list", List.class)) {
+            bw.write(String.format("%s,%s,%s,%s,%s", ol.get("ol_item", Document.class).get("_id", Integer.class), ol.get("ol_supply_w_id", Integer.class), ol.get("ol_quantity", Double.class), ol.get("ol_amount", Double.class), ol.get("ol_delivery_d", Date.class)));
+            bw.newLine();
+        }
+        bw.flush();
     }
 
     private void processDeliveryXact(String[] data) {
@@ -310,11 +347,11 @@ public class XactProcessor {
                 Document district = districtList.get(0);
                 long wdoId = wdId;
                 wdoId <<= 24;
-                wdoId += (long)((Document)district.get("d_o_to_c_list", List.class).get(0)).get("o_id", Integer.class);
+                wdoId += ((Document)district.get("d_o_to_c_list", List.class).get(0)).get("o_id", Integer.class);
 
                 long wdcId = wdId;
                 wdcId <<= 21;
-                wdcId += (long)((Document)district.get("d_o_to_c_list", List.class).get(0)).get("c_id", Integer.class);
+                wdcId += ((Document)district.get("d_o_to_c_list", List.class).get(0)).get("c_id", Integer.class);
 
                 // Get order
                 Document order = orderCollection.find(Filters.eq("_id", wdoId)).first();
@@ -323,7 +360,7 @@ public class XactProcessor {
 
                 // Add order update
                 orderUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdoId), new Document("$set", new Document("o_carrier_id", carrierId))));
-                String olDeliveryD = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(Calendar.getInstance());
+                String olDeliveryD = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(Calendar.getInstance().getTime());
                 for (int j = 0; j < m; j++) {
                     orderUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdoId), new Document("$set", new Document("ol_list."+j+"ol_delivery_d", olDeliveryD))));
                 }
@@ -378,7 +415,7 @@ public class XactProcessor {
         String cState = customerStatic.get("c_state", String.class);
         String cZip = customerStatic.get("c_zip", String.class);
         String cPhone = customerStatic.get("c_phone", String.class);
-        String cSince = customerStatic.get("c_since", String.class);
+        Date cSince = customerStatic.get("c_since", Date.class);
         String cCredit = customerStatic.get("c_credit", String.class);
         String cCreditLim = Double.toString(customerStatic.get("c_credit_lim", Double.class));
         String cDiscount = Double.toString(customerStatic.get("c_discount", Double.class));
@@ -392,11 +429,11 @@ public class XactProcessor {
         String wZip = warehouseStatic.get("w_zip", String.class);
 
         Document districtStatic = districtStaticCollection.find(new Document("_id", wdId)).first();
-        String dStreet1 = warehouseStatic.get("d_street_1", String.class);
-        String dStreet2 = warehouseStatic.get("d_street_2", String.class);
-        String dCity = warehouseStatic.get("d_city", String.class);
-        String dState = warehouseStatic.get("d_state", String.class);
-        String dZip = warehouseStatic.get("d_zip", String.class);
+        String dStreet1 = districtStatic.get("d_street_1", String.class);
+        String dStreet2 = districtStatic.get("d_street_2", String.class);
+        String dCity = districtStatic.get("d_city", String.class);
+        String dState = districtStatic.get("d_state", String.class);
+        String dZip = districtStatic.get("d_zip", String.class);
 
         bw.write(String.format("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s", wId, dId, cId, cFirst, cMiddle, cLast, cStreet1, cStreet2, cCity, cState, cZip, cPhone, cSince, cCredit, cCreditLim, cDiscount, cBalance));
         bw.newLine();
@@ -404,7 +441,7 @@ public class XactProcessor {
         bw.newLine();
         bw.write(String.format("%s,%s,%s,%s,%s", dStreet1, dStreet2, dCity, dState, dZip));
         bw.newLine();
-        bw.write(String.format("%s", Double.toString(payment)));
+        bw.write(String.format("%s", payment));
         bw.newLine();
         bw.flush();
     }
@@ -526,7 +563,7 @@ public class XactProcessor {
         orderLineUnusedCollection.insertMany(orderLineUnusedList, new InsertManyOptions().ordered(false));
 
         // Insert to orderCollection
-        String oEntryD = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(Calendar.getInstance());
+        String oEntryD = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(Calendar.getInstance().getTime());
         orderCollection.insertOne(DocCreator.createOrderWithOrderLinePopularTotalAmountDoc(wdoId, cId, null, Integer.toString(m), Integer.toString(oAllLocal), oEntryD, orderLineList, popularIName, maxQuantity, oTotalAmount));
 
         // Update stock
@@ -544,15 +581,15 @@ public class XactProcessor {
         // Get static
         Document customerStatic = customerStaticCollection.find(new Document("_id", wdcId)).first();
         Document warehouseStatic = warehouseStaticCollection.find(new Document("_id", Integer.parseInt(wId))).first();
-        Document districtStatic = districtCollection.find(new Document("_id", wdId)).first();
+        Document districtStatic = districtStaticCollection.find(new Document("_id", wdId)).first();
 
         bw.write(String.format("%s,%s,%s,%s,%s,%s", wId, dId, cId, customerStatic.get("c_last", String.class), customerStatic.get("c_credit", String.class), Double.toString(customerStatic.get("c_discount", Double.class))));
         bw.newLine();
-        bw.write(String.format("%s,%s", Double.toString(warehouseStatic.get("w_tax", Double.class)), Double.toString(districtStatic.get("d_tax", Double.class))));
+        bw.write(String.format("%s,%s", warehouseStatic.get("w_tax", Double.class), districtStatic.get("d_tax", Double.class)));
         bw.newLine();
         bw.write(String.format("%d,%s", dNextOId, oEntryD));
         bw.newLine();
-        bw.write(String.format("%d,%s", m, Double.toString(oTotalAmount * (1 + warehouseStatic.get("w_tax", Double.class) + districtStatic.get("d_tax", Double.class)) * (1 - customerStatic.get("c_discount", Double.class)))));
+        bw.write(String.format("%d,%s", m, oTotalAmount * (1 + warehouseStatic.get("w_tax", Double.class) + districtStatic.get("d_tax", Double.class)) * (1 - customerStatic.get("c_discount", Double.class))));
         bw.newLine();
         for (int i = 0; i < itemNumberList.size(); i++) {
             bw.write(String.format("%s,%s,%s,%s,%s,%s", itemNumberList.get(i), iNameList.get(i), sQuantityList.get(i), quantityList.get(i), olAmountList.get(i), sQuantityList.get(i)));
@@ -561,7 +598,8 @@ public class XactProcessor {
         bw.flush();
     }
 
-    public static void main(String[] args) {
-        XactProcessor processor = new XactProcessor("/d8-data", "d8_1");
+    public static void main(String[] args) throws IOException {
+        XactProcessor processor = new XactProcessor(System.getProperty("user.dir") + "/d8-xact/0.txt", "d8_1");
+        processor.processXact(new long[7], new long[7]);
     }
 }

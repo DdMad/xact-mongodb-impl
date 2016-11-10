@@ -56,7 +56,7 @@ public class DocCreator {
     public static Document createOrderLineDoc(String olNumber, Document olItem, String olDeliveryD, String olAmount, String olSupplyWId, String olQuantity) {
         return new Document("ol_number", Integer.parseInt(olNumber))
                 .append("ol_item", olItem)
-                .append("ol_delivery_d", olDeliveryD.equals("null") ? null : olDeliveryD)
+                .append("ol_delivery_d", olDeliveryD)
                 .append("ol_amount", Double.parseDouble(olAmount))
                 .append("ol_supply_w_id", Integer.parseInt(olSupplyWId))
                 .append("ol_quantity", Double.parseDouble(olQuantity));
@@ -71,7 +71,7 @@ public class DocCreator {
         try {
             return new Document("_id", wdoId)
                     .append("c_id", Integer.parseInt(cId))
-                    .append("o_carrier_id", oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
+                    .append("o_carrier_id", oCarrierId == null || oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
                     .append("o_ol_cnt", Integer.parseInt(oOlCnt))
                     .append("o_all_local", Integer.parseInt(oAllLocal))
                     .append("o_entry_d", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").parse(oEntryD));
@@ -81,7 +81,7 @@ public class DocCreator {
 
         return new Document("_id", wdoId)
                 .append("c_id", cId)
-                .append("o_carrier_id", oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
+                .append("o_carrier_id", oCarrierId == null || oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
                 .append("o_ol_cnt", Integer.parseInt(oOlCnt))
                 .append("o_all_local", Integer.parseInt(oAllLocal))
                 .append("o_entry_d", oEntryD);
@@ -91,7 +91,7 @@ public class DocCreator {
         try {
             return new Document("_id", wdoId)
                     .append("c_id", Integer.parseInt(cId))
-                    .append("o_carrier_id", oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
+                    .append("o_carrier_id", oCarrierId == null || oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
                     .append("o_ol_cnt", Integer.parseInt(oOlCnt))
                     .append("o_all_local", Integer.parseInt(oAllLocal))
                     .append("o_entry_d", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").parse(oEntryD))
@@ -105,7 +105,7 @@ public class DocCreator {
 
         return new Document("_id", wdoId)
                 .append("c_id", cId)
-                .append("o_carrier_id", oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
+                .append("o_carrier_id", oCarrierId == null || oCarrierId.equals("null") ? null : Integer.parseInt(oCarrierId))
                 .append("o_ol_cnt", Integer.parseInt(oOlCnt))
                 .append("o_all_local", Integer.parseInt(oAllLocal))
                 .append("o_entry_d", oEntryD)

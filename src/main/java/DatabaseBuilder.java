@@ -361,8 +361,10 @@ public class DatabaseBuilder {
             if (orderList.size() >= INSERT_THRESHOLD) {
                 orderCollection.insertMany(orderList, new InsertManyOptions().ordered(false));
                 orderList.clear();
-                districtCollection.bulkWrite(districtUpdates);
-                districtUpdates.clear();
+                if (!districtUpdates.isEmpty()) {
+                    districtCollection.bulkWrite(districtUpdates);
+                    districtUpdates.clear();
+                }
             }
         });
 
@@ -616,15 +618,15 @@ public class DatabaseBuilder {
         }
     }
 
-    public void test() {
-        MongoCollection<Document> t = db.getCollection(COLLECTION_WAREHOUSE);
-        ArrayList<Document> d = t.find(new Document("_id", 1)).projection(new Document("test", new Document("$slice", 1))).into(new ArrayList<>());
-        System.out.println(d.get(0).toJson());
-    }
+//    public void test() {
+//        MongoCollection<Document> t = db.getCollection(COLLECTION_WAREHOUSE);
+//        ArrayList<Document> d = t.find(new Document("_id", 1)).projection(new Document("test", new Document("$slice", 1))).into(new ArrayList<>());
+//        System.out.println(d.get(0).toJson());
+//    }
 
     public static void main(String[] args) throws IOException {
         DatabaseBuilder builder = new DatabaseBuilder(System.getProperty("user.dir") + "/d8", "d8_1");
-//        builder.loadData();
-        builder.test();
+        builder.loadData();
+//        builder.test();
     }
 }
