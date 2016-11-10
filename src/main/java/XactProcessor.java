@@ -31,6 +31,8 @@ public class XactProcessor {
     private static final String COLLECTION_WAREHOUSE = "warehouse";
     private static final String COLLECTION_WAREHOUSE_STATIC = "warehouse_static";
 
+    private static final String COLLECTION_ORDER_CUSTOMER_MAP = "order_customer_map";
+
     private String xactFileDir;
     private BufferedReader br;
     private BufferedWriter bw;
@@ -54,6 +56,8 @@ public class XactProcessor {
     private MongoCollection<Document> stockCollection;
     private MongoCollection<Document> stockStaticCollection;
     private MongoCollection<Document> stockUnusedCollection;
+
+    private MongoCollection<Document> orderCustomerMapCollection;
 
     public XactProcessor(String dir, String dbName) throws IOException {
         logger = Logger.getLogger(XactProcessor.class.getName());
@@ -86,6 +90,8 @@ public class XactProcessor {
         stockCollection = db.getCollection(COLLECTION_STOCK);
         stockStaticCollection = db.getCollection(COLLECTION_STOCK_STATIC);
         stockUnusedCollection = db.getCollection(COLLECTION_STOCK_UNUSED);
+
+        orderCustomerMapCollection = db.getCollection(COLLECTION_ORDER_CUSTOMER_MAP);
 
         File output = new File(xactFileDir + "-out.txt");
         if (!output.exists()) {
@@ -389,7 +395,7 @@ public class XactProcessor {
         String wId = data[1];
         int carrierId = Integer.parseInt(data[2]);
 
-        List<WriteModel<Document>> districtUpdates = new ArrayList<WriteModel<Document>>();
+        List<WriteModel<Document>> orderCustomerMapUpdates = new ArrayList<WriteModel<Document>>();
         List<WriteModel<Document>> orderUpdates = new ArrayList<WriteModel<Document>>();
         List<WriteModel<Document>> customerUpdates = new ArrayList<WriteModel<Document>>();
 
@@ -398,16 +404,16 @@ public class XactProcessor {
             wdId <<= 4;
             wdId += i;
 
-            List<Document> districtList = districtCollection.find(new Document("_id", wdId)).projection(new Document("d_o_to_c_list", new Document("$slice", 1))).into(new ArrayList<Document>());
-            if (!districtList.isEmpty()) {
-                Document district = districtList.get(0);
+            List<Document> orderCustomerMapList = orderCustomerMapCollection.find(new Document("_id", wdId)).projection(new Document("d_o_to_c_list", new Document("$slice", 1))).into(new ArrayList<Document>());
+            if (!orderCustomerMapList.isEmpty()) {
+                Document orderCustomerMap = orderCustomerMapList.get(0);
                 long wdoId = wdId;
                 wdoId <<= 24;
-                wdoId += ((Document)district.get("d_o_to_c_list", List.class).get(0)).get("o_id", Integer.class);
+                wdoId += ((Document)orderCustomerMap.get("d_o_to_c_list", List.class).get(0)).get("o_id", Integer.class);
 
                 long wdcId = wdId;
                 wdcId <<= 21;
-                wdcId += ((Document)district.get("d_o_to_c_list", List.class).get(0)).get("c_id", Integer.class);
+                wdcId += ((Document)orderCustomerMap.get("d_o_to_c_list", List.class).get(0)).get("c_id", Integer.class);
 
                 // Get order
                 Document order = orderCollection.find(Filters.eq("_id", wdoId)).first();
@@ -425,11 +431,11 @@ public class XactProcessor {
                 customerUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdcId), new Document("$inc", new Document("c_balance", totalAmount).append("c_delivery_cnt", 1))));
 
                 // Add district update
-                districtUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdId), new Document("$pop", new Document("d_o_to_c_list", -1))));
+                orderCustomerMapUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdId), new Document("$pop", new Document("d_o_to_c_list", -1))));
             }
         }
 
-        districtCollection.bulkWrite(districtUpdates, new BulkWriteOptions().ordered(false));
+        orderCustomerMapCollection.bulkWrite(orderCustomerMapUpdates, new BulkWriteOptions().ordered(false));
     }
 
     private void processPaymentXact(String[] data) throws IOException {
@@ -628,7 +634,7 @@ public class XactProcessor {
         // Update district
         List<Document> list = new ArrayList<Document>();
         list.add(new Document("o_id", dNextOId).append("c_id", Integer.parseInt(cId)));
-        districtCollection.updateOne(Filters.eq("_id", wdId),
+        orderCustomerMapCollection.updateOne(Filters.eq("_id", wdId),
                 new Document("$push",
                         new Document("d_o_to_c_list",
                                 new Document("$each", list).append("$sort", new Document("o_id", 1)))));
@@ -655,7 +661,7 @@ public class XactProcessor {
     }
 
     public static void main(String[] args) throws IOException {
-        XactProcessor processor = new XactProcessor(System.getProperty("user.dir") + "/d8-xact/8.txt", "d8_1");
+        XactProcessor processor = new XactProcessor(System.getProperty("user.dir") + "/d8-xact/0.txt", "d8_1");
         processor.processXact(new long[7], new long[7]);
     }
 }

@@ -42,6 +42,8 @@ public class DatabaseBuilder {
     private static final String COLLECTION_WAREHOUSE = "warehouse";
     private static final String COLLECTION_WAREHOUSE_STATIC = "warehouse_static";
 
+    private static final String COLLECTION_ORDER_CUSTOMER_MAP = "order_customer_map";
+
     private static final int INSERT_THRESHOLD = 1000;
 
     private String dataFileDir;
@@ -198,14 +200,21 @@ public class DatabaseBuilder {
         db.createCollection(COLLECTION_DISTRICT_NEXT_O_ID);
         db.createCollection(COLLECTION_DISTRICT_STATIC);
 
+        db.getCollection(COLLECTION_ORDER_CUSTOMER_MAP).drop();
+        db.createCollection(COLLECTION_ORDER_CUSTOMER_MAP);
+
         MongoCollection<Document> districtCollection = db.getCollection(COLLECTION_DISTRICT);
         MongoCollection<Document> districtNextOIdCollection = db.getCollection(COLLECTION_DISTRICT_NEXT_O_ID);
         MongoCollection<Document> districtStaticCollection = db.getCollection(COLLECTION_DISTRICT_STATIC);
+
+        MongoCollection<Document> orderCustomerMapCollection = db.getCollection(COLLECTION_ORDER_CUSTOMER_MAP);
 
         Stream<String> districts = Files.lines(path);
         List<Document> districtList = new ArrayList<Document>();
         List<Document> districtNextOIdList = new ArrayList<Document>();
         List<Document> districtStaticList = new ArrayList<Document>();
+
+        List<Document> orderCustomerMapList = new ArrayList<Document>();
 
         districts.forEach(d -> {
             String[] content = d.split(",");
@@ -229,6 +238,8 @@ public class DatabaseBuilder {
             districtNextOIdList.add(DocCreator.createDistrictNextOIdDoc(wdId, dNextOId));
             districtStaticList.add(DocCreator.createDistrictStatic(wdId, dName, dStreet1, dStreet2, dCity, dState, dZip, dTax));
 
+            orderCustomerMapList.add(new Document("_id", wdId));
+
             if (districtList.size() >= INSERT_THRESHOLD) {
                 districtCollection.insertMany(districtList, new InsertManyOptions().ordered(false));
                 districtList.clear();
@@ -236,6 +247,8 @@ public class DatabaseBuilder {
                 districtNextOIdList.clear();
                 districtStaticCollection.insertMany(districtStaticList, new InsertManyOptions().ordered(false));
                 districtStaticList.clear();
+                orderCustomerMapCollection.insertMany(orderCustomerMapList, new InsertManyOptions().ordered(false));
+                orderCustomerMapList.clear();
             }
         });
 
@@ -243,6 +256,7 @@ public class DatabaseBuilder {
             districtCollection.insertMany(districtList, new InsertManyOptions().ordered(false));
             districtNextOIdCollection.insertMany(districtNextOIdList, new InsertManyOptions().ordered(false));
             districtStaticCollection.insertMany(districtStaticList, new InsertManyOptions().ordered(false));
+            orderCustomerMapCollection.insertMany(orderCustomerMapList, new InsertManyOptions().ordered(false));
         }
 
         logger.info("Complete loading district collection!");
@@ -298,13 +312,14 @@ public class DatabaseBuilder {
 
         MongoCollection<Document> orderCollection = db.getCollection(COLLECTION_ORDER);
         MongoCollection<Document> customerCollection = db.getCollection(COLLECTION_CUSTOMER);
-        MongoCollection<Document> districtCollection = db.getCollection(COLLECTION_DISTRICT);
+
+        MongoCollection<Document> orderCustomerMapCollection = db.getCollection(COLLECTION_ORDER_CUSTOMER_MAP);
 
         Stream<String> orders = Files.lines(path);
         List<Document> orderList = new ArrayList<Document>();
 
         // Updates for district
-        List<WriteModel<Document>> districtUpdates = new ArrayList<WriteModel<Document>>();
+        List<WriteModel<Document>> orderCustomerMapUpdates = new ArrayList<WriteModel<Document>>();
 
         // c_last_o_id map
         Map<Long, Integer> cLastOIdMap = new HashMap<Long, Integer>();
@@ -342,7 +357,7 @@ public class DatabaseBuilder {
             list.add(new Document("o_id", Integer.parseInt(oId)).append("c_id", Integer.parseInt(cId)));
 
             if (oCarrierId.equals("null")) {
-                districtUpdates.add(new UpdateOneModel<Document>(Filters.eq("_id", wdId),
+                orderCustomerMapUpdates.add(new UpdateOneModel<Document>(Filters.eq("_id", wdId),
                         new Document("$push",
                                 new Document("d_o_to_c_list",
                                         new Document("$each", list).append("$sort", new Document("o_id", 1))))));
@@ -361,9 +376,9 @@ public class DatabaseBuilder {
             if (orderList.size() >= INSERT_THRESHOLD) {
                 orderCollection.insertMany(orderList, new InsertManyOptions().ordered(false));
                 orderList.clear();
-                if (!districtUpdates.isEmpty()) {
-                    districtCollection.bulkWrite(districtUpdates);
-                    districtUpdates.clear();
+                if (!orderCustomerMapUpdates.isEmpty()) {
+                    orderCustomerMapCollection.bulkWrite(orderCustomerMapUpdates);
+                    orderCustomerMapUpdates.clear();
                 }
             }
         });
@@ -372,8 +387,8 @@ public class DatabaseBuilder {
             orderCollection.insertMany(orderList, new InsertManyOptions().ordered(false));
         }
 
-        if (!districtUpdates.isEmpty()) {
-            districtCollection.bulkWrite(districtUpdates);
+        if (!orderCustomerMapUpdates.isEmpty()) {
+            orderCustomerMapCollection.bulkWrite(orderCustomerMapUpdates);
         }
 
         // Prepare bulk updates
