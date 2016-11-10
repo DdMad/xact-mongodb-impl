@@ -339,7 +339,7 @@ public class XactProcessor {
         districtCollection.bulkWrite(districtUpdates, new BulkWriteOptions().ordered(false));
     }
 
-    private void processPaymentXact(String[] data) {
+    private void processPaymentXact(String[] data) throws IOException {
         String wId = data[1];
         String dId = data[2];
         String cId = data[3];
@@ -360,10 +360,53 @@ public class XactProcessor {
         districtCollection.updateOne(Filters.eq("_id", wdId), new Document("$inc", new Document("d_ytd", payment)));
 
         // Update customer
-        customerCollection.updateOne(Filters.eq("_id", wdcId), new Document("$inc", new Document("c_balance", -payment)
+        double cB = customerCollection.find(new Document("_id", wdcId)).first().get("c_balance", Double.class);
+        customerCollection.updateOne(Filters.eq("_id", wdcId), new Document("$inc", new Document("c_balance", - payment)
                 .append("c_ytd_payment", payment)
                 .append("c_payment_cnt", 1)
         ));
+
+        /**************** Output ****************/
+        // Get static info
+        Document customerStatic = customerStaticCollection.find(new Document("_id", wdcId)).first();
+        String cFirst = customerStatic.get("c_first", String.class);
+        String cMiddle = customerStatic.get("c_middle", String.class);
+        String cLast = customerStatic.get("c_last", String.class);
+        String cStreet1 = customerStatic.get("c_street_1", String.class);
+        String cStreet2 = customerStatic.get("c_street_2", String.class);
+        String cCity = customerStatic.get("c_city", String.class);
+        String cState = customerStatic.get("c_state", String.class);
+        String cZip = customerStatic.get("c_zip", String.class);
+        String cPhone = customerStatic.get("c_phone", String.class);
+        String cSince = customerStatic.get("c_since", String.class);
+        String cCredit = customerStatic.get("c_credit", String.class);
+        String cCreditLim = Double.toString(customerStatic.get("c_credit_lim", Double.class));
+        String cDiscount = Double.toString(customerStatic.get("c_discount", Double.class));
+        String cBalance = Double.toString(cB - payment);
+
+        Document warehouseStatic = warehouseStaticCollection.find(new Document("_id", Integer.parseInt(wId))).first();
+        String wStreet1 = warehouseStatic.get("w_street_1", String.class);
+        String wStreet2 = warehouseStatic.get("w_street_2", String.class);
+        String wCity = warehouseStatic.get("w_city", String.class);
+        String wState = warehouseStatic.get("w_state", String.class);
+        String wZip = warehouseStatic.get("w_zip", String.class);
+
+        Document districtStatic = districtStaticCollection.find(new Document("_id", wdId)).first();
+        String dStreet1 = warehouseStatic.get("d_street_1", String.class);
+        String dStreet2 = warehouseStatic.get("d_street_2", String.class);
+        String dCity = warehouseStatic.get("d_city", String.class);
+        String dState = warehouseStatic.get("d_state", String.class);
+        String dZip = warehouseStatic.get("d_zip", String.class);
+
+        bw.write(String.format("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s", wId, dId, cId, cFirst, cMiddle, cLast, cStreet1, cStreet2, cCity, cState, cZip, cPhone, cSince, cCredit, cCreditLim, cDiscount, cBalance));
+        bw.newLine();
+        bw.write(String.format("%s,%s,%s,%s,%s", wStreet1, wStreet2, wCity, wState, wZip));
+        bw.newLine();
+        bw.write(String.format("%s,%s,%s,%s,%s", dStreet1, dStreet2, dCity, dState, dZip));
+        bw.newLine();
+        bw.write(String.format("%s", Double.toString(payment)));
+        bw.newLine();
+        bw.flush();
     }
 
     private void processNewOrderXact(String[] data) throws IOException {
