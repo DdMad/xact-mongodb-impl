@@ -213,7 +213,7 @@ public class XactProcessor {
         bw.flush();
     }
 
-    private void processPopularItemXact(String[] data) {
+    private void processPopularItemXact(String[] data) throws IOException {
         String wId = data[1];
         String dId = data[2];
         int lastOrderAmount = Integer.parseInt(data[3]);
@@ -267,6 +267,32 @@ public class XactProcessor {
                 }
             }
         }
+
+        /**************** Output ****************/
+        bw.write(String.format("%s,%s", wId, dId));
+        bw.newLine();
+        bw.write(String.format("%s", lastOrderAmount));
+        bw.newLine();
+
+        for (Document order : lastLOrderList) {
+            long wdoIdLong = order.get("_id", Long.class);
+            long wdcId = ((wdoIdLong >> 24) << 21) + order.get("c_id", Integer.class);
+            Document customerStatic = customerStaticCollection.find(new Document("_id", wdcId)).first();
+            bw.write(String.format("%s,%s,%s,%s,%s", wdoIdLong & 0xffffff, order.get("o_entry_d", Date.class), customerStatic.get("c_first", String.class), customerStatic.get("c_middle", String.class), customerStatic.get("c_last", String.class)));
+            bw.newLine();
+            double oPopularOlQuantity = order.get("o_popular_ol_quantity", Double.class);
+            for (String iName : (List<String>)order.get("p_popular_i_name", List.class)) {
+                bw.write(String.format("%s,%s", iName ,oPopularOlQuantity));
+                bw.newLine();
+            }
+        }
+
+        for (Map.Entry<String, Double> entry : popularity.entrySet()) {
+            bw.write(String.format("%s,%s", entry.getKey(), entry.getValue() / (double)lastOrderAmount));
+            bw.newLine();
+        }
+
+        bw.flush();
     }
 
     private void processStockLevelXact(String[] data) throws IOException {
