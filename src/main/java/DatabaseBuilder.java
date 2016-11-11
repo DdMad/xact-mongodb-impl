@@ -584,10 +584,6 @@ public class DatabaseBuilder {
             warehouseStaticCollection.insertMany(warehouseStaticList, new InsertManyOptions().ordered(false));
         }
 
-        warehouseCollection.updateOne(Filters.eq("_id", 1), new Document("$push", new Document("test", 1)));
-
-        warehouseCollection.updateOne(Filters.eq("_id", 1), new Document("$push", new Document("test", 2)));
-
         logger.info("Complete loading warehouse collection!");
     }
 
@@ -633,15 +629,8 @@ public class DatabaseBuilder {
         }
     }
 
-//    public void test() {
-//        MongoCollection<Document> t = db.getCollection(COLLECTION_WAREHOUSE);
-//        ArrayList<Document> d = t.find(new Document("_id", 1)).projection(new Document("test", new Document("$slice", 1))).into(new ArrayList<>());
-//        System.out.println(d.get(0).toJson());
-//    }
-
     public static void main(String[] args) throws IOException {
         DatabaseBuilder builder = new DatabaseBuilder(System.getProperty("user.dir") + "/d8", "d8_1");
         builder.loadData();
-//        builder.test();
     }
 }

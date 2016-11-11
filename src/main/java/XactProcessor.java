@@ -193,7 +193,7 @@ public class XactProcessor {
 
     private void processTopBalanceXact() throws IOException {
         // Get top 10 customers
-        MongoCursor<Document> top10Customers = customerCollection.find().limit(10).iterator();
+        MongoCursor<Document> top10Customers = customerCollection.find().sort(new Document("c_balance", -1)).limit(10).iterator();
 
         /**************** Output ****************/
         while (top10Customers.hasNext()) {
@@ -663,7 +663,7 @@ public class XactProcessor {
     }
 
     public static void main(String[] args) throws IOException {
-        XactProcessor processor = new XactProcessor(System.getProperty("user.dir") + "/d8-xact/0.txt", "d8_1");
+        XactProcessor processor = new XactProcessor(System.getProperty("user.dir") + "/d40-xact/6.txt", "d40_1");
         processor.processXact(new long[7], new long[7]);
     }
 }
