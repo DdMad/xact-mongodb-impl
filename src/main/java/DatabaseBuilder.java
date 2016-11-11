@@ -70,6 +70,7 @@ public class DatabaseBuilder {
 
         if (isSharding) {
             mongoClient.getDatabase("admin").runCommand(new Document("enableSharding", dbName));
+            mongoClient.getDatabase("admin").runCommand(new Document("movePrimary", dbName).append("to", "shard0000"));
         }
     }
 

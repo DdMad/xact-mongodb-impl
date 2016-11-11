@@ -16,7 +16,15 @@ mkdir {log directory path}
 ```
 For our setup, we install `MongoDB` in `/temp/mongodb/`, and data directory path is `/temp/mongodb/data` and log directory path is `/temp/mongodb/log`
 
-After that, start `mongod` for each node used:
+### For 1 node setup
+Just start `mongod` by:
+```bash
+/temp/mongodb/bin/mongod --fork --dbpath={data directory path} --logpath={log directory path}/{log file name}
+```
+Since our program uses default port number for MongoDB, you may not change it.
+
+### For 3 node setup
+For using 3 node, make sure the `mongod` for 1 node is stoppd, and then start `mongod` for each node used:
 ```bash
 /temp/mongodb/bin/mongod --port 30001 --fork --dbpath={data directory path} --logpath={log directory path}/{log file name}
 ```
@@ -34,7 +42,7 @@ Then start `mongos` by:
 ```bash
 /temp/mongodb/bin/mongos --fork --configdb {config server address}:{config server port number} --logpath={log directory path}/{log file name} 
 ```
-For this, we use the default port number, and you can specifiy port number by `--port {your port number}`
+For this, we use the default port number and you may not change it otherwise the program may fail.
 
 Now we have set up 3 `mongod` (i.e. shard) and 1 `mongos` and 1 `config server`.
 
@@ -52,6 +60,14 @@ mongos> db.runCommand({addshard : "xcnd4.comp.nus.edu.sg:30001", allowLocal : tr
 mongos> db.runCommand({addshard : "xcnd5.comp.nus.edu.sg:30001", allowLocal : true})
 ```
 You can specify other nodes by changing the address and port number above (i.e. "xcnd3.comp.nus.edu.sg:30001")
+
+If you want to run single node after running 3 nodes, you should remove other shards by running:
+```bash
+mongos> use admin
+mongos> db.runCommand({removeShard : "shard0001"})
+mongos> db.runCommand({removeShard : "shard0002"})
+```
+Before using these commands, make sure the databases that enables sharding on those shards are dropped; otherwise error may occur.
 
 ## Load Data
 After you set up with Intellij or some toher IDE, you can run `Loader` class to load data into database. 
