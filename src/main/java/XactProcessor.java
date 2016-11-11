@@ -405,7 +405,7 @@ public class XactProcessor {
             wdId += i;
 
             List<Document> orderCustomerMapList = orderCustomerMapCollection.find(new Document("_id", wdId)).projection(new Document("d_o_to_c_list", new Document("$slice", 1))).into(new ArrayList<Document>());
-            if (!orderCustomerMapList.isEmpty()) {
+            if (!orderCustomerMapList.isEmpty() && !orderCustomerMapList.get(0).get("d_o_to_c_list", List.class).isEmpty()) {
                 Document orderCustomerMap = orderCustomerMapList.get(0);
                 long wdoId = wdId;
                 wdoId <<= 24;
@@ -432,10 +432,14 @@ public class XactProcessor {
 
                 // Add district update
                 orderCustomerMapUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdId), new Document("$pop", new Document("d_o_to_c_list", -1))));
+            } else {
+                System.out.println("No delivery order");
             }
         }
 
-        orderCustomerMapCollection.bulkWrite(orderCustomerMapUpdates, new BulkWriteOptions().ordered(false));
+        if (!orderCustomerMapUpdates.isEmpty()) {
+            orderCustomerMapCollection.bulkWrite(orderCustomerMapUpdates, new BulkWriteOptions().ordered(false));
+        }
     }
 
     private void processPaymentXact(String[] data) throws IOException {
