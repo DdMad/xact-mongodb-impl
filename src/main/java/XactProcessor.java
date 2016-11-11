@@ -661,9 +661,4 @@ public class XactProcessor {
         }
         bw.flush();
     }
-
-    public static void main(String[] args) throws IOException {
-        XactProcessor processor = new XactProcessor(System.getProperty("user.dir") + "/d40-xact/6.txt", "d40_1");
-        processor.processXact(new long[7], new long[7]);
-    }
 }

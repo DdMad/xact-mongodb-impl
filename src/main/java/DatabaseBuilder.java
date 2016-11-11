@@ -48,17 +48,29 @@ public class DatabaseBuilder {
 
     private String dataFileDir;
 
+    private MongoClient mongoClient;
     private MongoDatabase db;
+    private String dbString;
 
     private Logger logger;
 
-    public DatabaseBuilder(String dir, String dbName) {
+    private boolean isSharding;
+
+    public DatabaseBuilder(String dir, String dbName, boolean node) {
         setupLogger();
 
         dataFileDir = dir;
+        dbString = dbName;
+        isSharding = node;
 
-        MongoClient mongoClient = new MongoClient();
+        mongoClient = new MongoClient();
+
+        mongoClient.dropDatabase(dbName);
         db = mongoClient.getDatabase(dbName);
+
+        if (isSharding) {
+            mongoClient.getDatabase("admin").runCommand(new Document("enableSharding", dbName));
+        }
     }
 
     public void loadData() throws IOException {
@@ -124,6 +136,11 @@ public class DatabaseBuilder {
         db.createCollection(COLLECTION_CUSTOMER);
         db.createCollection(COLLECTION_CUSTOMER_STATIC);
         db.createCollection(COLLECTION_CUSTOMER_UNUSED);
+
+        if (isSharding) {
+            Document cmd = new Document("shardCollection", dbString + "." + COLLECTION_CUSTOMER).append("key", new Document("_id", "hashed"));
+            mongoClient.getDatabase("admin").runCommand(cmd);
+        }
 
         MongoCollection<Document> customerCollection = db.getCollection(COLLECTION_CUSTOMER);
         MongoCollection<Document> customerStaticCollection = db.getCollection(COLLECTION_CUSTOMER_STATIC);
@@ -202,6 +219,11 @@ public class DatabaseBuilder {
 
         db.getCollection(COLLECTION_ORDER_CUSTOMER_MAP).drop();
         db.createCollection(COLLECTION_ORDER_CUSTOMER_MAP);
+
+        if (isSharding) {
+            Document cmd = new Document("shardCollection", dbString + "." + COLLECTION_ORDER_CUSTOMER_MAP).append("key", new Document("_id", "hashed"));
+            mongoClient.getDatabase("admin").runCommand(cmd);
+        }
 
         MongoCollection<Document> districtCollection = db.getCollection(COLLECTION_DISTRICT);
         MongoCollection<Document> districtNextOIdCollection = db.getCollection(COLLECTION_DISTRICT_NEXT_O_ID);
@@ -309,6 +331,11 @@ public class DatabaseBuilder {
 
         db.getCollection(COLLECTION_ORDER).drop();
         db.createCollection(COLLECTION_ORDER);
+
+        if (isSharding) {
+            Document cmd = new Document("shardCollection", dbString + "." + COLLECTION_ORDER).append("key", new Document("_id", "hashed"));
+            mongoClient.getDatabase("admin").runCommand(cmd);
+        }
 
         MongoCollection<Document> orderCollection = db.getCollection(COLLECTION_ORDER);
         MongoCollection<Document> customerCollection = db.getCollection(COLLECTION_CUSTOMER);
@@ -627,10 +654,5 @@ public class DatabaseBuilder {
         if (!updates.isEmpty()) {
             orderCollection.bulkWrite(updates, new BulkWriteOptions().ordered(false));
         }
-    }
-
-    public static void main(String[] args) throws IOException {
-        DatabaseBuilder builder = new DatabaseBuilder(System.getProperty("user.dir") + "/d8", "d8_1");
-        builder.loadData();
     }
 }
