@@ -44,6 +44,8 @@ All the transaction result will be written to a file. For example, for transacti
 
 The final result of thoughput will be written in a file called `result-d8-n.txt.out` or `result-d40-n.txt.out`, where `n` is the number of transaction file.
 
+All the output files will be in the same directory as the data files or xact files.
+
 ## PS
 When you run the jar, ensure that there is a `log4j.properities`. If you run the jar in other places, just copy the `log4j.properities` in this project to the same place.
 

@@ -5,7 +5,6 @@ import java.io.IOException;
  */
 public class Loader {
     public static void main(String[] args) {
-
         if (args[0].toLowerCase().equals("d8")) {
             DatabaseBuilder builder = new DatabaseBuilder(System.getProperty("user.dir") + "/d8", "d8");
             try {
