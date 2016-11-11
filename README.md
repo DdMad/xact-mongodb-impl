@@ -106,7 +106,7 @@ java -cp mongodb-impl.jar Processor "d8" "0.txt"
 java -cp mongodb-impl.jar Processor "d40" "0.txt"
 ```
 
-The text file `0.txt` can be changed to other transaction files. Here the transaction files (e.g. 0.txt) must be in a folder called **d8-xact** (for D8 xact files) or **d40-xacy** (for D40 xact files).
+The text file `0.txt` can be changed to other transaction files. Here the transaction files (e.g. 0.txt) must be in a folder called **d8-xact** (for D8 xact files) or **d40-xact** (for D40 xact files).
 
 Or you may want to modify the Java class. After your modification, you can compile the whole project to a executable jar file and then run it.
 
