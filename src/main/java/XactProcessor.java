@@ -432,8 +432,6 @@ public class XactProcessor {
 
                 // Add district update
                 orderCustomerMapUpdates.add(new UpdateOneModel<Document>(new Document("_id", wdId), new Document("$pop", new Document("d_o_to_c_list", -1))));
-            } else {
-                System.out.println("No delivery order");
             }
         }
 
